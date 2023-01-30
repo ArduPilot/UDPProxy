@@ -28,11 +28,12 @@ private:
     int fd;
     mavlink_channel_t chan;
     int key_id;
-    mavlink_signing_streams_t signing_streams;
-    mavlink_signing_t signing;
+    mavlink_signing_streams_t signing_streams {};
+    mavlink_signing_t signing {};
+    mavlink_status_t status_out {};
 
     // last time we saved the timestamp
-    uint32_t last_signing_save_ms;
+    uint32_t last_signing_save_ms = 0;
 
     void load_signing_key(int key_id);
     void update_signing_timestamp(uint64_t timestamp_usec);

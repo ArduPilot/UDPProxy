@@ -52,17 +52,18 @@ bool MAVLinkUDP::send_message(const mavlink_message_t &msg)
 {
     mavlink_message_t msg2 = msg;
     if (key_id == -1) {
-        // strip signing
-        //msg2.incompat_flags &= ~MAVLINK_IFLAG_SIGNED;
+        // strip signing and recalculate CRC
+        msg2.incompat_flags &= ~MAVLINK_IFLAG_SIGNED;
+        const uint8_t crc_extra = mavlink_get_crc_extra(&msg2);
+        const uint8_t min_len = mavlink_min_message_length(&msg2);
+        const uint8_t max_len = mavlink_max_message_length(&msg2);
+        status_out.signing = nullptr;
+        mavlink_finalize_message_buffer(&msg2, msg2.sysid, msg2.compid, &status_out, min_len, max_len, crc_extra);
     }
     uint8_t buf[300];
     uint16_t len = mavlink_msg_to_send_buffer(buf, &msg2);
     if (len > 0) {
-        const auto sent = send(fd, buf, len, 0);
-        if (sent != len) {
-            ::printf("sent=%d len=%d on %d\n", int(sent), int(len), fd);
-        }
-        return sent == len;
+        return send(fd, buf, len, 0) == len;
     }
     return false;
 }
@@ -73,7 +74,7 @@ bool MAVLinkUDP::send_message(const mavlink_message_t &msg)
 extern "C" {
 static bool accept_unsigned_callback(const mavlink_status_t *status, uint32_t msgId)
 {
-    return true;
+    return false;
 }
 }
 
