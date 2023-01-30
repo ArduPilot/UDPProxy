@@ -1,5 +1,3 @@
-#define _GNU_SOURCE
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,6 +14,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/wait.h>
+#include "mavlink.h"
 
 static double timestamp()
 {
@@ -56,7 +55,7 @@ int open_socket_in(int port)
 	return res;
 }
 
-static void main_loop(int sock1, int sock2)
+static void main_loop(int sock1, int sock2, int listen_port1, int listen_port2)
 {
 	unsigned char buf[10240];
         bool have_conn1=false;
@@ -64,6 +63,7 @@ static void main_loop(int sock1, int sock2)
         double last_pkt1=0;
         double last_pkt2=0;
         int fdmax = (sock1>sock2?sock1:sock2)+1;
+        MAVLinkUDP mav1, mav2;
 
 	while (1) {
             fd_set fds;
@@ -102,12 +102,14 @@ static void main_loop(int sock1, int sock2)
                     if (connect(sock1, (struct sockaddr *)&from, fromlen) != 0) {
                         break;
                     }
+                    mav1.init(sock1, MAVLINK_COMM_0, false);
                     have_conn1 = true;
                     printf("have conn1\n");
                     fflush(stdout);
                 }
-                if (have_conn2) {
-                    if (send(sock2, buf, n, 0) != n) {
+                mavlink_message_t msg;
+                if (have_conn2 && mav1.receive_message(buf, n, msg)) {
+                    if (!mav2.send_message(msg)) {
                         break;
                     }
                 }
@@ -124,12 +126,14 @@ static void main_loop(int sock1, int sock2)
                     if (connect(sock2, (struct sockaddr *)&from, fromlen) != 0) {
                         break;
                     }
+                    mav2.init(sock2, MAVLINK_COMM_1, true, listen_port2);
                     have_conn2 = true;
                     printf("have conn2\n");
                     fflush(stdout);
                 }
-                if (have_conn1) {
-                    if (send(sock1, buf, n, 0) != n) {
+                mavlink_message_t msg;
+                if (have_conn1 && mav2.receive_message(buf, n, msg)) {
+                    if (!mav1.send_message(msg)) {
                         break;
                     }
                 }
@@ -158,7 +162,7 @@ static void loop_proxy(int listen_port1, int listen_port2)
             return;
         }
         
-        main_loop(sock_in1, sock_in2);
+        main_loop(sock_in1, sock_in2, listen_port1, listen_port2);
         close(sock_in1);
         close(sock_in2);
     }
@@ -177,9 +181,13 @@ int main(int argc, char *argv[])
 
     printf("Opening %d sockets\n", count);
     fflush(stdout);
-    for (int i=0; i<count; i++) {
-        if (fork() == 0) {
-            loop_proxy(listen_port1+i, listen_port2+i);
+    if (count == 1) {
+        loop_proxy(listen_port1, listen_port2);
+    } else {
+        for (int i=0; i<count; i++) {
+            if (fork() == 0) {
+                loop_proxy(listen_port1+i, listen_port2+i);
+            }
         }
     }
     int status=0;
