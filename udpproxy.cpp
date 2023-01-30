@@ -1,3 +1,6 @@
+/*
+  UDP Proxy for MAVLink, with signing support
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -104,7 +107,7 @@ static void main_loop(int sock1, int sock2, int listen_port1, int listen_port2)
                     }
                     mav1.init(sock1, MAVLINK_COMM_0, false);
                     have_conn1 = true;
-                    printf("have conn1\n");
+                    printf("have conn1 for ID %u\n", unsigned(listen_port2));
                     fflush(stdout);
                 }
                 mavlink_message_t msg;
@@ -128,7 +131,7 @@ static void main_loop(int sock1, int sock2, int listen_port1, int listen_port2)
                     }
                     mav2.init(sock2, MAVLINK_COMM_1, true, listen_port2);
                     have_conn2 = true;
-                    printf("have conn2\n");
+                    printf("have conn2 for ID %u\n", unsigned(listen_port2));
                     fflush(stdout);
                 }
                 mavlink_message_t msg;
@@ -144,8 +147,6 @@ static void main_loop(int sock1, int sock2, int listen_port1, int listen_port2)
 static void loop_proxy(int listen_port1, int listen_port2)
 {
     while (true) {
-        printf("Opening sockets %d %d\n", listen_port1, listen_port2);
-        fflush(stdout);
         int sock_in1 = open_socket_in(listen_port1);
         int sock_in2 = open_socket_in(listen_port2);
         if (sock_in1 == -1 || sock_in2 == -1) {

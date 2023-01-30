@@ -74,6 +74,7 @@ bool MAVLinkUDP::send_message(const mavlink_message_t &msg)
 extern "C" {
 static bool accept_unsigned_callback(const mavlink_status_t *status, uint32_t msgId)
 {
+    // when signing is configured we reject all unsigned packets
     return false;
 }
 }
