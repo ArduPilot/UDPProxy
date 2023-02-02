@@ -72,7 +72,7 @@ static void main_loop(int sock1, int sock2, int listen_port1, int listen_port2)
                 }
                 mav1.init(sock1, MAVLINK_COMM_0, false);
                 have_conn1 = true;
-                printf("have conn1 for ID %u from %s\n", unsigned(listen_port2), addr_to_str(from));
+                printf("%s have conn1 for ID %u from %s\n", time_string(), unsigned(listen_port2), addr_to_str(from));
                 fflush(stdout);
             }
             mavlink_message_t msg {};
@@ -97,7 +97,7 @@ static void main_loop(int sock1, int sock2, int listen_port1, int listen_port2)
                 }
                 mav2.init(sock2, MAVLINK_COMM_1, true, listen_port2);
                 have_conn2 = true;
-                printf("have conn2 for ID %u from %s\n", unsigned(listen_port2), addr_to_str(from));
+                printf("%s have conn2 for ID %u from %s\n", time_string(), unsigned(listen_port2), addr_to_str(from));
                 fflush(stdout);
             }
             mavlink_message_t msg {};
@@ -108,8 +108,11 @@ static void main_loop(int sock1, int sock2, int listen_port1, int listen_port2)
             }
         }
     }
-    printf("Closed connection for %u count1=%u count2=%u\n",
-           unsigned(listen_port2), unsigned(count1), unsigned(count2));
+    if (count1 != 0 || count2 != 0) {
+        printf("%s Closed connection for %u count1=%u count2=%u\n",
+               time_string(),
+               unsigned(listen_port2), unsigned(count1), unsigned(count2));
+    }
 }
 
 static void loop_proxy(int listen_port1, int listen_port2)

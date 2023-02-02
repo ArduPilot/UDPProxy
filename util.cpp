@@ -59,3 +59,15 @@ const char *addr_to_str(struct sockaddr_in &addr)
     inet_ntop(AF_INET, &addr.sin_addr, str, INET_ADDRSTRLEN);
     return str;
 }
+
+/*
+  return time as a string, using a static buffer
+ */
+const char *time_string(void)
+{
+    time_t t = time(nullptr);
+    struct tm *tm = localtime(&t);
+    static char str[100] {};
+    strftime(str, sizeof(str)-1, "%F %T", tm);
+    return str;
+}
