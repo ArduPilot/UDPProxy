@@ -18,130 +18,98 @@
 #include <netinet/in.h>
 #include <sys/wait.h>
 #include "mavlink.h"
-
-static double timestamp()
-{
-    struct timeval tval;
-    gettimeofday(&tval,NULL);
-    return tval.tv_sec + (tval.tv_usec*1.0e-6);
-}
-
-/*
-  open a socket of the specified type, port and address for incoming data
-*/
-int open_socket_in(int port)
-{
-	struct sockaddr_in sock;
-	int res;
-	int one=1;
-
-	memset(&sock,0,sizeof(sock));
-
-#ifdef HAVE_SOCK_SIN_LEN
-	sock.sin_len = sizeof(sock);
-#endif
-	sock.sin_port = htons(port);
-	sock.sin_family = AF_INET;
-
-	res = socket(AF_INET, SOCK_DGRAM, 0);
-	if (res == -1) { 
-		fprintf(stderr, "socket failed\n"); return -1; 
-		return -1;
-	}
-
-	setsockopt(res,SOL_SOCKET,SO_REUSEADDR,(char *)&one,sizeof(one));
-
-	if (bind(res, (struct sockaddr *)&sock, sizeof(sock)) < 0) { 
-		return(-1); 
-	}
-
-	return res;
-}
+#include "util.h"
 
 static void main_loop(int sock1, int sock2, int listen_port1, int listen_port2)
 {
-	unsigned char buf[10240];
-        bool have_conn1=false;
-        bool have_conn2=false;
-        double last_pkt1=0;
-        double last_pkt2=0;
-        int fdmax = (sock1>sock2?sock1:sock2)+1;
-        MAVLinkUDP mav1, mav2;
+    unsigned char buf[10240];
+    bool have_conn1=false;
+    bool have_conn2=false;
+    double last_pkt1=0;
+    double last_pkt2=0;
+    uint32_t count1=0, count2=0;
+    int fdmax = (sock1>sock2?sock1:sock2)+1;
+    MAVLinkUDP mav1, mav2;
 
-	while (1) {
-            fd_set fds;
-            int ret;
-            struct timeval tval;
-            double now = timestamp();
+    while (1) {
+        fd_set fds;
+        int ret;
+        struct timeval tval;
+        double now = time_seconds();
             
-            if (have_conn1 && now - last_pkt1 > 10) {
-                break;
-            }
-            if (have_conn2 && now - last_pkt2 > 10) {
-                break;
-            }
+        if (have_conn1 && now - last_pkt1 > 10) {
+            break;
+        }
+        if (have_conn2 && now - last_pkt2 > 10) {
+            break;
+        }
             
-            FD_ZERO(&fds);
-            FD_SET(sock1, &fds);
-            FD_SET(sock2, &fds);
+        FD_ZERO(&fds);
+        FD_SET(sock1, &fds);
+        FD_SET(sock2, &fds);
 
-            tval.tv_sec = 10;
-            tval.tv_usec = 0;
+        tval.tv_sec = 10;
+        tval.tv_usec = 0;
 
-            ret = select(fdmax, &fds, NULL, NULL, &tval);
-            if (ret == -1 && errno == EINTR) continue;
-            if (ret <= 0) break;
+        ret = select(fdmax, &fds, NULL, NULL, &tval);
+        if (ret == -1 && errno == EINTR) continue;
+        if (ret <= 0) break;
 
-            now = timestamp();
+        now = time_seconds();
+        fflush(stdout);
                 
-            if (FD_ISSET(sock1, &fds)) {
-                struct sockaddr_in from;
-                socklen_t fromlen = sizeof(from);
-                int n = recvfrom(sock1, buf, sizeof(buf), 0, 
-                                 (struct sockaddr *)&from, &fromlen);
-                if (n <= 0) break;
-                last_pkt1 = now;
-                if (!have_conn1) {
-                    if (connect(sock1, (struct sockaddr *)&from, fromlen) != 0) {
-                        break;
-                    }
-                    mav1.init(sock1, MAVLINK_COMM_0, false);
-                    have_conn1 = true;
-                    printf("have conn1 for ID %u\n", unsigned(listen_port2));
-                    fflush(stdout);
+        if (FD_ISSET(sock1, &fds)) {
+            struct sockaddr_in from;
+            socklen_t fromlen = sizeof(from);
+            int n = recvfrom(sock1, buf, sizeof(buf), 0, 
+                             (struct sockaddr *)&from, &fromlen);
+            if (n <= 0) break;
+            last_pkt1 = now;
+            count1++;
+            if (!have_conn1) {
+                if (connect(sock1, (struct sockaddr *)&from, fromlen) != 0) {
+                    break;
                 }
-                mavlink_message_t msg;
-                if (have_conn2 && mav1.receive_message(buf, n, msg)) {
-                    if (!mav2.send_message(msg)) {
-                        break;
-                    }
+                mav1.init(sock1, MAVLINK_COMM_0, false);
+                have_conn1 = true;
+                printf("have conn1 for ID %u from %s\n", unsigned(listen_port2), addr_to_str(from));
+                fflush(stdout);
+            }
+            mavlink_message_t msg {};
+            if (have_conn2 && mav1.receive_message(buf, n, msg)) {
+                if (!mav2.send_message(msg)) {
+                    break;
                 }
             }
+        }
 
-            if (FD_ISSET(sock2, &fds)) {
-                struct sockaddr_in from;
-                socklen_t fromlen = sizeof(from);
-                int n = recvfrom(sock2, buf, sizeof(buf), 0, 
-                                 (struct sockaddr *)&from, &fromlen);
-                if (n <= 0) break;
-                last_pkt2 = now;
-                if (!have_conn2) {
-                    if (connect(sock2, (struct sockaddr *)&from, fromlen) != 0) {
-                        break;
-                    }
-                    mav2.init(sock2, MAVLINK_COMM_1, true, listen_port2);
-                    have_conn2 = true;
-                    printf("have conn2 for ID %u\n", unsigned(listen_port2));
-                    fflush(stdout);
+        if (FD_ISSET(sock2, &fds)) {
+            struct sockaddr_in from;
+            socklen_t fromlen = sizeof(from);
+            int n = recvfrom(sock2, buf, sizeof(buf), 0, 
+                             (struct sockaddr *)&from, &fromlen);
+            if (n <= 0) break;
+            last_pkt2 = now;
+            count2++;
+            if (!have_conn2) {
+                if (connect(sock2, (struct sockaddr *)&from, fromlen) != 0) {
+                    break;
                 }
-                mavlink_message_t msg;
-                if (have_conn1 && mav2.receive_message(buf, n, msg)) {
-                    if (!mav1.send_message(msg)) {
-                        break;
-                    }
+                mav2.init(sock2, MAVLINK_COMM_1, true, listen_port2);
+                have_conn2 = true;
+                printf("have conn2 for ID %u from %s\n", unsigned(listen_port2), addr_to_str(from));
+                fflush(stdout);
+            }
+            mavlink_message_t msg {};
+            if (have_conn1 && mav2.receive_message(buf, n, msg)) {
+                if (!mav1.send_message(msg)) {
+                    break;
                 }
             }
-	}
+        }
+    }
+    printf("Closed connection for %u count1=%u count2=%u\n",
+           unsigned(listen_port2), unsigned(count1), unsigned(count2));
 }
 
 static void loop_proxy(int listen_port1, int listen_port2)

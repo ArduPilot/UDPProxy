@@ -10,8 +10,8 @@
 
 #define MAVLINK_SEND_UART_BYTES(chan, buf, len) comm_send_buffer(chan, buf, len)
 
-// 2 comm channels per available proxy connection
-#define MAVLINK_COMM_NUM_BUFFERS 10
+// 2 comm channels per available proxy connection, plus one for STATUSTEXT msgs
+#define MAVLINK_COMM_NUM_BUFFERS 3
 
 #define MAVLINK_MAX_PAYLOAD_LEN 255
 

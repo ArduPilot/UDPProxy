@@ -7,6 +7,9 @@
 
 #define KEY_FILE "keys.tdb"
 
+#define KEY_MAGIC 0x6b73e867a72cdd1fULL
+
+
 /*
   abstraction for MAVLink on UDP
  */
@@ -17,7 +20,7 @@ public:
     bool send_message(const mavlink_message_t &msg);
 
     struct SigningKey {
-        uint64_t magic = 0x6b73e867a72cdd1fULL;
+        uint64_t magic;
         uint64_t timestamp;
         uint8_t secret_key[32];
     } key;
@@ -28,15 +31,28 @@ private:
     int fd;
     mavlink_channel_t chan;
     int key_id;
+    bool key_loaded = false;
+    bool got_signed_packet = false;
+    static bool got_bad_signature;
+
     mavlink_signing_streams_t signing_streams {};
     mavlink_signing_t signing {};
-    mavlink_status_t status_out {};
 
     // last time we saved the timestamp
-    uint32_t last_signing_save_ms = 0;
+    double last_signing_save_s = 0;
+
+    // last time we warned the support engineer to fix signing
+    double last_signing_warning_s = 0;
+
+    // last source sysid and compid from a HEARTBEAT from user
+    uint8_t last_sysid, last_compid;
 
     void load_signing_key(int key_id);
-    void update_signing_timestamp(uint64_t timestamp_usec);
+    void update_signing_timestamp(void);
     void save_signing_timestamp(void);
     bool load_key(int key_id);
+    bool periodic_warning(void);
+    void mav_printf(uint8_t severity, const char *fmt, ...);
+    static bool accept_unsigned_callback(const mavlink_status_t *status, uint32_t msgId);
+    void handle_setup_signing(const mavlink_message_t &msg);
 };

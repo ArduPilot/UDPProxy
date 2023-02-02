@@ -25,6 +25,7 @@ int main(int argc, char *argv[])
 
     MAVLinkUDP::SigningKey key;
     key.timestamp = 0;
+    key.magic = KEY_MAGIC;
 
     sha256_init(&ctx);
     sha256_update(&ctx, passphrase, strlen(passphrase));
