@@ -120,10 +120,11 @@ static void main_loop(struct listen_port *p)
         }
     }
     if (count1 != 0 || count2 != 0) {
-        printf("[%u] %s Closed connection count1=%u count2=%u\n",
-               unsigned(count1),
+        printf("[%d] %s Closed connection count1=%u count2=%u\n",
+               p->port2,
                time_string(),
-               unsigned(p->port2), unsigned(count2));
+               unsigned(count1),
+               unsigned(count2));
     }
 }
 
