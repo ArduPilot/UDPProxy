@@ -11,6 +11,7 @@
 #include <fcntl.h>
 #include <sys/time.h>
 #include <stdarg.h>
+#include <stdlib.h>
 #include "util.h"
 
 mavlink_system_t mavlink_system = {0, 0};
@@ -191,6 +192,7 @@ bool MAVLinkUDP::load_key(int key_id)
         return false;
     }
     memcpy(&key, d.dptr, sizeof(key));
+    free(d.dptr);
     tdb_close(tdb);
     return key.magic == KEY_MAGIC;
 }
