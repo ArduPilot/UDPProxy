@@ -65,7 +65,7 @@ class KeyEntry:
         self.secret_key = h.digest()
 
     def __str__(self):
-        return "%u/%u '%s' counts=%u/%u connections=%u" % (self.port1, self.port2, self.name, self.count1, self.count2, self.connections)
+        return "%u/%u '%s' counts=%u/%u connections=%u" % (self.port1, self.port2, self.name.rstrip('\0'), self.count1, self.count2, self.connections)
 
 def get_port_sets(db):
     '''get sets of port1/port2'''
