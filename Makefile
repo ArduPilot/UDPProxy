@@ -2,7 +2,7 @@
 
 .PHONY: headers
 
-all: udpproxy set_key
+all: udpproxy
 
 headers:
 	@./regen_headers.sh
@@ -10,13 +10,12 @@ headers:
 CXX=g++
 CC=gcc
 CFLAGS=-Wall -g -DSTANDALONE
-CXXFLAGS=-Wall -g
+CXXFLAGS=-Wall -g -Werror
 
-udpproxy: udpproxy.o mavlink.o tdb.o spinlock.o util.o
-	$(CXX) $(CXXFLAGS) -o $@ $^
+LIBS="-ltdb"
 
-set_key: set_key.o tdb.o spinlock.o mavlink.o sha256.o util.o
-	$(CXX) $(CXXFLAGS) -o $@ $^
+udpproxy: udpproxy.o mavlink.o util.o keydb.o
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LIBS)
 
 clean:
 	rm -rf udpproxy *.o

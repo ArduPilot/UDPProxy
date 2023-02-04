@@ -19,7 +19,7 @@
 #include <sys/wait.h>
 #include "mavlink.h"
 #include "util.h"
-#include "tdb.h"
+#include "keydb.h"
 
 
 struct listen_port {
@@ -30,6 +30,60 @@ struct listen_port {
 };
 
 static struct listen_port *ports;
+
+static uint32_t count_ports(void)
+{
+    uint32_t count = 0;
+    for (auto *p = ports; p; p=p->next) {
+        count++;
+    }
+    return count;
+}
+
+static bool have_port2(int port2)
+{
+    for (auto *p = ports; p; p=p->next) {
+        if (p->port2 == port2) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/*
+  add a port pair to the list
+ */
+static void add_port(int port1, int port2)
+{
+    if (have_port2(port2)) {
+        // already have it
+        return;
+    }
+    struct listen_port *p = new struct listen_port;
+    p->next = ports;
+    p->port1 = port1;
+    p->port2 = port2;
+    p->sock1 = -1;
+    p->sock2 = -1;
+    p->pid = 0;
+    ports = p;
+    printf("Added port %d/%d\n", port1, port2);
+}
+
+
+static int handle_record(struct tdb_context *db, TDB_DATA key, TDB_DATA data, void *ptr)
+{
+    if (key.dsize != sizeof(int) || data.dsize != sizeof(KeyEntry)) {
+        // skip it
+        return 0;
+    }
+    struct KeyEntry k {};
+    int port2 = 0;
+    memcpy(&port2, key.dptr, sizeof(int));
+    memcpy(&k, data.dptr, sizeof(KeyEntry));
+    add_port(k.port1, port2);
+    return 0;
+}
 
 static void main_loop(struct listen_port *p)
 {
@@ -67,8 +121,7 @@ static void main_loop(struct listen_port *p)
         if (ret <= 0) break;
 
         now = time_seconds();
-        fflush(stdout);
-                
+
         if (FD_ISSET(p->sock1, &fds)) {
             struct sockaddr_in from;
             socklen_t fromlen = sizeof(from);
@@ -84,7 +137,6 @@ static void main_loop(struct listen_port *p)
                 mav1.init(p->sock1, MAVLINK_COMM_0, false);
                 have_conn1 = true;
                 printf("[%d] %s have conn1 for from %s\n", unsigned(p->port2), time_string(), addr_to_str(from));
-                fflush(stdout);
             }
             mavlink_message_t msg {};
             if (have_conn2 && mav1.receive_message(buf, n, msg)) {
@@ -109,7 +161,6 @@ static void main_loop(struct listen_port *p)
                 mav2.init(p->sock2, MAVLINK_COMM_1, true, p->port2);
                 have_conn2 = true;
                 printf("[%u] %s have conn2 from %s\n", unsigned(p->port2), time_string(), addr_to_str(from));
-                fflush(stdout);
             }
             mavlink_message_t msg {};
             if (have_conn1 && mav2.receive_message(buf, n, msg)) {
@@ -126,21 +177,6 @@ static void main_loop(struct listen_port *p)
                unsigned(count1),
                unsigned(count2));
     }
-}
-
-/*
-  add a port pair to the list
- */
-static void add_port(int port1, int port2)
-{
-    struct listen_port *p = new struct listen_port;
-    p->next = ports;
-    p->port1 = port1;
-    p->port2 = port2;
-    p->sock1 = -1;
-    p->sock2 = -1;
-    p->pid = 0;
-    ports = p;
 }
 
 /*
@@ -221,11 +257,23 @@ static void handle_connection(struct listen_port *p)
     printf("[%d] New child %d\n", p->port2, int(p->pid));
 }
 
+static void reload_ports(void)
+{
+    auto *db = db_open();
+    if (db == nullptr) {
+        printf("Database not found\n");
+        exit(1);
+    }
+    tdb_traverse(db, handle_record, nullptr);
+    db_close(db);
+}
+
 /*
   wait for incoming connections
  */
 static void wait_connection(void)
 {
+    double last_reload = time_seconds();
     while (true) {
         fd_set fds;
         int ret;
@@ -248,6 +296,12 @@ static void wait_connection(void)
         if (ret == -1 && errno == EINTR) continue;
         if (ret <= 0) {
             check_children();
+
+            double now = time_seconds();
+            if (now - last_reload > 5) {
+                last_reload = now;
+                reload_ports();
+            }
             continue;
         }
 
@@ -263,19 +317,16 @@ static void wait_connection(void)
 
 int main(int argc, char *argv[])
 {
-    if (argc < 4) {
-        printf("Usage: udpproxy <baseport1> <baseport2> <count>\n");
+    setvbuf(stdout, nullptr, _IOLBF, 4096);
+    printf("Opening sockets\n");
+    auto *db = db_open();
+    if (db == nullptr) {
+        printf("Database not found\n");
         exit(1);
     }
-
-    int listen_port1 = atoi(argv[1]);
-    int listen_port2 = atoi(argv[2]);
-    int count = atoi(argv[3]);
-
-    printf("Opening %d sockets\n", count);
-    for (int i=0; i<count; i++) {
-        add_port(listen_port1+i, listen_port2+i);
-    }
+    tdb_traverse(db, handle_record, nullptr);
+    printf("Added %u ports\n", unsigned(count_ports()));
+    db_close(db);
 
     open_sockets();
     wait_connection();

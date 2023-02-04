@@ -6,9 +6,7 @@
 #include "libraries/mavlink2/generated/mavlink_helpers.h"
 #include <sys/types.h>
 #include <sys/socket.h>
-#include "tdb.h"
-#include <sys/stat.h>
-#include <fcntl.h>
+#include <tdb.h>
 #include <sys/time.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -176,14 +174,10 @@ bool MAVLinkUDP::accept_unsigned_callback(const mavlink_status_t *status, uint32
 /*
   load key from keys.tdb
  */
-bool MAVLinkUDP::load_key(int key_id)
+bool MAVLinkUDP::load_key(TDB_CONTEXT *tdb, int key_id)
 {
-    auto *tdb = tdb_open(KEY_FILE, 128, 0, O_RDWR | O_CREAT, 0600);
-    if (tdb == nullptr) {
-        return false;
-    }
     TDB_DATA k;
-    k.dptr = (char *)&key_id;
+    k.dptr = (uint8_t *)&key_id;
     k.dsize = sizeof(int);
 
     auto d = tdb_fetch(tdb, k);
@@ -193,29 +187,22 @@ bool MAVLinkUDP::load_key(int key_id)
     }
     memcpy(&key, d.dptr, sizeof(key));
     free(d.dptr);
-    tdb_close(tdb);
     return key.magic == KEY_MAGIC;
 }
 
 /*
   save key to keys.tdb
  */
-bool MAVLinkUDP::save_key(int key_id, const SigningKey &key)
+bool MAVLinkUDP::save_key(TDB_CONTEXT *tdb, int key_id, const KeyEntry &key)
 {
-    auto *tdb = tdb_open(KEY_FILE, 1000, 0, O_RDWR | O_CREAT, 0600);
-    if (tdb == nullptr) {
-        return false;
-    }
     TDB_DATA k;
-    k.dptr = (char*)&key_id;
+    k.dptr = (uint8_t*)&key_id;
     k.dsize = sizeof(int);
     TDB_DATA d;
-    d.dptr = (char*)&key;
+    d.dptr = (uint8_t*)&key;
     d.dsize = sizeof(key);
 
-    int ret = tdb_store(tdb, k, d, TDB_REPLACE);
-    tdb_close(tdb);
-    return ret == 0;
+    return tdb_store(tdb, k, d, TDB_REPLACE) == 0;
 }
 
 /*
@@ -228,13 +215,12 @@ void MAVLinkUDP::load_signing_key(int key_id)
         ::printf("Failed to load signing key for %d - no status\n", key_id);
         return;        
     }
+    auto *db = db_open();
     // we fallback to the default key ID of 0 if no signing key
-    if (!load_key(key_id)) {
-        if (!load_key(0)) {
-            ::printf("Failed to find signing key for ID %d\n", key_id);
-            return;
-        }
-        ::printf("Using default key for %d\n", key_id);
+    if (!load_key(db, key_id)) {
+        ::printf("Failed to find signing key for ID %d\n", key_id);
+        db_close(db);
+        return;
     }
 
     key_loaded = true;
@@ -265,6 +251,7 @@ void MAVLinkUDP::load_signing_key(int key_id)
         status->signing = &signing;
         status->signing_streams = &signing_streams;
     }
+    db_close(db);
 }
 
 /*
@@ -306,7 +293,13 @@ void MAVLinkUDP::update_signing_timestamp()
  */
 void MAVLinkUDP::save_signing_timestamp(void)
 {
-    if (!load_key(key_id)) {
+    auto *db = db_open_transaction();
+    if (db == nullptr) {
+        return;
+    }
+    if (!load_key(db, key_id)) {
+        printf("Bad key %d\n", key_id);
+        db_close_cancel(db);
         return;
     }
     bool need_save = false;
@@ -321,7 +314,10 @@ void MAVLinkUDP::save_signing_timestamp(void)
     }
     if (need_save) {
         // save updated key
-        save_key(key_id, key);
+        save_key(db, key_id, key);
+        db_close_commit(db);
+    } else {
+        db_close_cancel(db);
     }
 }
 
@@ -374,14 +370,25 @@ void MAVLinkUDP::handle_setup_signing(const mavlink_message_t &msg)
 {
     mavlink_setup_signing_t packet;
     mavlink_msg_setup_signing_decode(&msg, &packet);
-    struct SigningKey key;
 
-    key.magic = KEY_MAGIC;
+    auto *db = db_open_transaction();
+    if (db == nullptr) {
+        return;
+    }
+
+    if (!load_key(db, key_id)) {
+        printf("Bad key %d\n", key_id);
+        db_close_cancel(db);
+        return;
+    }
+
     key.timestamp = packet.initial_timestamp;
     memcpy(key.secret_key, packet.secret_key, 32);
 
     ::printf("[%d] Set new signing key\n", key_id);
-    save_key(key_id, key);
-    load_signing_key(key_id);
+    save_key(db, key_id, key);
+
     got_signed_packet = false;
+    db_close_commit(db);
+    load_signing_key(key_id);
 }
