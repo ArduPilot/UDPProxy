@@ -151,10 +151,10 @@ def add_entry(db, args):
     passphrase = args[3]
 
     ports1, ports2 = get_port_sets(db)
-    if port1 in ports1:
+    if port1 in ports1 or port1 in ports2:
         print("Entry already exists for port1 %d" % port1)
         sys_exit(1)
-    if port2 in ports2:
+    if port2 in ports2 or port2 in ports1:
         print("Entry already exists for port2 %d" % port2)
         sys_exit(1)
 
