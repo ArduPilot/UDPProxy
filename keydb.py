@@ -115,8 +115,9 @@ def convert_db(db):
 
 def list_db(db):
     '''convert from old format'''
-    for k in db.keys():
-        port2, = struct.unpack("<i", k)
+    ports1, ports2 = get_port_sets(db)
+    for port2 in sorted(list(ports2)):
+        k = struct.pack("<i", port2)
         v = db.get(k)
         if len(v) != KeyEntry.expected_length:
             continue
