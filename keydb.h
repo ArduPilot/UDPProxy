@@ -32,3 +32,6 @@ void db_close(TDB_CONTEXT *db);
 TDB_CONTEXT *db_open_transaction(void);
 void db_close_cancel(TDB_CONTEXT *db);
 void db_close_commit(TDB_CONTEXT *db);
+bool db_load_key(TDB_CONTEXT *tdb, int port2, struct KeyEntry &key);
+bool db_save_key(TDB_CONTEXT *tdb, int port2, const struct KeyEntry &key);
+

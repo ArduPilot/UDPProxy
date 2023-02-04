@@ -176,33 +176,15 @@ bool MAVLinkUDP::accept_unsigned_callback(const mavlink_status_t *status, uint32
  */
 bool MAVLinkUDP::load_key(TDB_CONTEXT *tdb, int key_id)
 {
-    TDB_DATA k;
-    k.dptr = (uint8_t *)&key_id;
-    k.dsize = sizeof(int);
-
-    auto d = tdb_fetch(tdb, k);
-    if (d.dptr == nullptr || d.dsize != sizeof(key)) {
-        tdb_close(tdb);
-        return false;
-    }
-    memcpy(&key, d.dptr, sizeof(key));
-    free(d.dptr);
-    return key.magic == KEY_MAGIC;
+    return db_load_key(tdb, key_id, key);
 }
 
 /*
   save key to keys.tdb
  */
-bool MAVLinkUDP::save_key(TDB_CONTEXT *tdb, int key_id, const KeyEntry &key)
+bool MAVLinkUDP::save_key(TDB_CONTEXT *tdb, int key_id)
 {
-    TDB_DATA k;
-    k.dptr = (uint8_t*)&key_id;
-    k.dsize = sizeof(int);
-    TDB_DATA d;
-    d.dptr = (uint8_t*)&key;
-    d.dsize = sizeof(key);
-
-    return tdb_store(tdb, k, d, TDB_REPLACE) == 0;
+    return db_save_key(tdb, key_id, key);
 }
 
 /*
@@ -314,7 +296,7 @@ void MAVLinkUDP::save_signing_timestamp(void)
     }
     if (need_save) {
         // save updated key
-        save_key(db, key_id, key);
+        save_key(db, key_id);
         db_close_commit(db);
     } else {
         db_close_cancel(db);
@@ -386,7 +368,7 @@ void MAVLinkUDP::handle_setup_signing(const mavlink_message_t &msg)
     memcpy(key.secret_key, packet.secret_key, 32);
 
     ::printf("[%d] Set new signing key\n", key_id);
-    save_key(db, key_id, key);
+    save_key(db, key_id);
 
     got_signed_packet = false;
     db_close_commit(db);

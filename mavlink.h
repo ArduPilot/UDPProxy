@@ -15,8 +15,6 @@ public:
     bool receive_message(const uint8_t *buf, size_t len, mavlink_message_t &msg);
     bool send_message(const mavlink_message_t &msg);
 
-    static bool save_key(TDB_CONTEXT *db, int key_id, const struct KeyEntry &key);
-
 private:
     struct KeyEntry key;
     int fd;
@@ -41,7 +39,9 @@ private:
     void load_signing_key(int key_id);
     void update_signing_timestamp(void);
     void save_signing_timestamp(void);
-    bool load_key(TDB_CONTEXT *tdb, int key_id);
+    bool load_key(TDB_CONTEXT *db, int key_id);
+    bool save_key(TDB_CONTEXT *db, int key_id);
+
     bool periodic_warning(void);
     void mav_printf(uint8_t severity, const char *fmt, ...);
     static bool accept_unsigned_callback(const mavlink_status_t *status, uint32_t msgId);

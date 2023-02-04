@@ -176,6 +176,20 @@ static void main_loop(struct listen_port *p)
                time_string(),
                unsigned(count1),
                unsigned(count2));
+        // update database
+        auto *db = db_open_transaction();
+        if (db != nullptr) {
+            struct KeyEntry ke;
+            if (db_load_key(db, p->port2, ke)) {
+                ke.count1 += count1;
+                ke.count2 += count2;
+                ke.connections++;
+                db_save_key(db, p->port2, ke);
+                db_close_commit(db);
+            } else {
+                db_close_cancel(db);
+            }
+        }
     }
 }
 
