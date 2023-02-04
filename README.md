@@ -3,37 +3,41 @@
 This is a UDP Proxy for MAVLink to facilitate remote support of
 ArduPilot users
 
+For more information on using the support proxy see https://support.ardupilot.org
+
 ## Features
 
  - both support engineer and user can be on private networks
  - supports manu users running in parallel
- - supports MAVLink2 signed connections from the support engineer
+ - uses MAVLink2 signed connections from the support engineer
  - uses normal UDP forwarding in users GCS
 
 ## Setup
 
-udpproxy should be run on a machine with a public IP address. You need
-to specify a base UDP port number for users to connect to and a base
-UDP port number for the support engineers to connnect to.
+udpproxy should be run on a machine with a public IP address. You
+should initialise the database 'keys.tdb' using the keydb.py script.
 
 For example:
 
- - udpproxy 20000 21000 30
+ - keydb.py add 10001 10002 'Support1' MySecurePassPhrase
 
-this will start 30 UDP proxy instances with user ports 20000 to 20029
-and support ports 21000 to 21029.
+that will add a single support engineer 'Support1' where the user will
+connect to port 10001 and the support engineer will connect to port
+10002.
 
-A cron job should be setup to restart udpproxy if needed
+Once the database is setup you should start udpproxy and it will
+listen on all ports.
 
-## Setting signing keys
+## keydb.py usage
 
-By default support engineers can connect without a signed
-connection. As this poses a security risk it is highly recommended to
-setup a signing key per support engineer.
+The following keydb.py commands are available:
 
-Example:
+ - keydb.py list
+ - keydb.py add PORT1 PORT2 Name PassPhrase
+ - keydb.py remove PORT2
+ - keydb.py setname PORT2 Name
+ - keydb.py setpass PORT2 NewPassPhrase
+ - keydb.py setport1 PORT2 PORT1
 
- - set_key 21001 MySecretKey
-
-this will setup the support engineer using port 21001 with the signing
-key MySecretKey.
+When new users are added the udpproxy process starts listening on the
+new port automatically.
