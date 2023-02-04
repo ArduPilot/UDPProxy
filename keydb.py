@@ -67,6 +67,26 @@ class KeyEntry:
     def __str__(self):
         return "%u/%u '%s' counts=%u/%u connections=%u" % (self.port1, self.port2, self.name, self.count1, self.count2, self.connections)
 
+def get_port_sets(db):
+    '''get sets of port1/port2'''
+    ports1 = set()
+    ports2 = set()
+    k = db.firstkey()
+
+    while k is not None:
+        port2, = struct.unpack("<i", k)
+        v = db.get(k)
+        if len(v) != KeyEntry.expected_length:
+            continue
+        ke = KeyEntry(port2)
+        ke.unpack(db.get(k))
+        ports1.add(ke.port1)
+        ports2.add(port2)
+        k = db.nextkey(k)
+        if k is None:
+            break
+    return ports1, ports2
+
 
 def sys_exit(code):
     '''exit with failure code'''
@@ -128,6 +148,14 @@ def add_entry(db, args):
     port2 = int(args[1])
     name = args[2]
     passphrase = args[3]
+
+    ports1, ports2 = get_port_sets(db)
+    if port1 in ports1:
+        print("Entry already exists for port1 %d" % port1)
+        sys_exit(1)
+    if port2 in ports2:
+        print("Entry already exists for port2 %d" % port2)
+        sys_exit(1)
 
     ke = KeyEntry(port2)
     if ke.fetch(db):
