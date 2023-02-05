@@ -222,12 +222,21 @@ parser = argparse.ArgumentParser(description=__doc__)
 
 parser.add_argument("--keydb", default="keys.tdb", help="key database tdb filename")
 parser.add_argument("action", default=None,
-                    choices=['list', 'convert', 'add', 'remove', 'setname', 'setpass', 'setport1'],
+                    choices=['list', 'convert', 'add', 'remove', 'setname', 'setpass', 'setport1', 'initialise'],
                     help="action to perform")
 parser.add_argument("args", default=[], nargs=argparse.REMAINDER)
 args = parser.parse_args()
 
-db = tdb.open('keys.tdb', hash_size=1024, tdb_flags=0, flags=os.O_RDWR, mode=0o600)
+if args.action == "initialise":
+    db = tdb.open('keys.tdb', hash_size=1024, tdb_flags=0, flags=os.O_RDWR|os.O_CREAT, mode=0o600)
+    print("Database keys.tdb initialised")
+    sys.exit(0)
+
+try:
+    db = tdb.open('keys.tdb', hash_size=1024, tdb_flags=0, flags=os.O_RDWR, mode=0o600)
+except FileNotFoundError:
+    print("keys.tdb not found, you need to use 'keydb.py initialise' to initialise the database")
+    sys.exit(1)
 db.transaction_start()
 
 if args.action == "convert":

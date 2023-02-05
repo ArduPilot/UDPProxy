@@ -32,6 +32,7 @@ listen on all ports.
 
 The following keydb.py commands are available:
 
+ - keydb.py initialise
  - keydb.py list
  - keydb.py add PORT1 PORT2 Name PassPhrase
  - keydb.py remove PORT2
