@@ -63,6 +63,8 @@ static bool have_port2(int port2)
     return false;
 }
 
+static void open_socket(struct listen_port *p);
+
 /*
   add a port pair to the list
  */
@@ -81,6 +83,7 @@ static void add_port(int port1, int port2)
     p->pid = 0;
     ports = p;
     printf("Added port %d/%d\n", port1, port2);
+    open_socket(p);
 }
 
 
@@ -234,16 +237,6 @@ static void open_socket(struct listen_port *p)
 }
 
 /*
-  open listening sockets
- */
-static void open_sockets(void)
-{
-    for (auto *p = ports; p; p=p->next) {
-        open_socket(p);
-    }
-}
-
-/*
   check for child exit
  */
 static void check_children(void)
@@ -355,7 +348,6 @@ int main(int argc, char *argv[])
     printf("Added %u ports\n", unsigned(count_ports()));
     db_close(db);
 
-    open_sockets();
     wait_connection();
 
     return 0;
