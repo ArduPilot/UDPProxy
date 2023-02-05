@@ -42,3 +42,8 @@ The following keydb.py commands are available:
 
 When new users are added the udpproxy process starts listening on the
 new port automatically.
+
+## License
+
+UDPProxy is licensed under the GNU General Public License version 3 or
+later
