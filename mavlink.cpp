@@ -49,6 +49,7 @@ void MAVLinkUDP::init(int _fd, mavlink_channel_t _chan, bool signing_required, i
     last_signing_warning_s = 0;
     last_sysid = 0;
     last_compid = 0;
+    bad_sig_count = 0;
 
     ZERO_STRUCT(signing_streams);
     ZERO_STRUCT(signing);
@@ -88,9 +89,19 @@ bool MAVLinkUDP::receive_message(const uint8_t *buf, size_t len, mavlink_message
                             switch (signing.last_status) {
                             case MAVLINK_SIGNING_STATUS_BAD_SIGNATURE:
                             default:
+                                bad_sig_count++;
+                                if (bad_sig_count < 3) {
+                                    // silently drop it
+                                    return false;
+                                }
                                 mav_printf(MAV_SEVERITY_CRITICAL, "Bad support signing key");
                                 break;
                             case MAVLINK_SIGNING_STATUS_REPLAY:
+                                bad_sig_count++;
+                                if (bad_sig_count < 3) {
+                                    // silently drop it
+                                    return false;
+                                }
                                 mav_printf(MAV_SEVERITY_CRITICAL, "Bad signing timestamp - replay");
                                 break;
                             case MAVLINK_SIGNING_STATUS_OLD_TIMESTAMP:
@@ -107,6 +118,7 @@ bool MAVLinkUDP::receive_message(const uint8_t *buf, size_t len, mavlink_message
                         got_signed_packet = false;
                         return false;
                     }
+                    bad_sig_count = 0;
                     if (!got_signed_packet) {
                         got_signed_packet = true;
                         ::printf("[%d] Got good signature\n", key_id);

@@ -12,7 +12,7 @@ CC=gcc
 CFLAGS=-Wall -g -DSTANDALONE
 CXXFLAGS=-Wall -g -Werror
 
-LIBS="-ltdb"
+LIBS=-ltdb
 
 udpproxy: udpproxy.o mavlink.o util.o keydb.o
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LIBS)

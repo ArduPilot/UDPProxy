@@ -36,6 +36,9 @@ private:
     // last source sysid and compid from a HEARTBEAT from user
     uint8_t last_sysid, last_compid;
 
+    // count of signature errors for triggering message
+    uint32_t bad_sig_count = 0;
+
     void load_signing_key(int key_id);
     void update_signing_timestamp(void);
     void save_signing_timestamp(void);
