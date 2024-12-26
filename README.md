@@ -1,6 +1,6 @@
 # UDP Proxy for MAVLink
 
-This is a UDP Proxy for MAVLink to facilitate remote support of
+This is a UDP/TCP Proxy for MAVLink to facilitate remote support of
 ArduPilot users
 
 For more information on using the support proxy see https://support.ardupilot.org
@@ -10,7 +10,8 @@ For more information on using the support proxy see https://support.ardupilot.or
  - both support engineer and user can be on private networks
  - supports manu users running in parallel
  - uses MAVLink2 signed connections from the support engineer
- - uses normal UDP forwarding in users GCS
+ - uses normal UDP/TCP forwarding in users GCS
+ - supports both TCP and UDP, including mixed connections
 
 ## Setup
 

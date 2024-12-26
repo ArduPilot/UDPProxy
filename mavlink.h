@@ -12,7 +12,7 @@
 class MAVLinkUDP {
 public:
     void init(int fd, mavlink_channel_t chan, bool signing_required, int key_id=-1);
-    bool receive_message(const uint8_t *buf, size_t len, mavlink_message_t &msg);
+    bool receive_message(uint8_t *&buf, ssize_t &len, mavlink_message_t &msg);
     bool send_message(const mavlink_message_t &msg);
 
 private:
