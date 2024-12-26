@@ -9,6 +9,7 @@
 #include <sys/time.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/wait.h>
 
 double time_seconds(void)
@@ -19,9 +20,9 @@ double time_seconds(void)
 }
 
 /*
-  open a socket of the specified type, port and address for incoming data
+  open a UDP socket on the given port
 */
-int open_socket_in(int port)
+int open_socket_in_udp(int port)
 {
     struct sockaddr_in sock;
     int res;
@@ -46,6 +47,44 @@ int open_socket_in(int port)
     if (bind(res, (struct sockaddr *)&sock, sizeof(sock)) < 0) { 
         return(-1); 
     }
+
+    return res;
+}
+
+/*
+  open a TCP socket on the given port
+*/
+int open_socket_in_tcp(int port)
+{
+    struct sockaddr_in sock;
+    int res;
+    int one=1;
+
+    memset(&sock,0,sizeof(sock));
+
+#ifdef HAVE_SOCK_SIN_LEN
+    sock.sin_len = sizeof(sock);
+#endif
+    sock.sin_port = htons(port);
+    sock.sin_family = AF_INET;
+
+    res = socket(AF_INET, SOCK_STREAM, 0);
+    if (res == -1) { 
+        fprintf(stderr, "socket failed\n"); return -1; 
+        return -1;
+    }
+
+    setsockopt(res,SOL_SOCKET,SO_REUSEADDR,(char *)&one,sizeof(one));
+
+    if (bind(res, (struct sockaddr *)&sock, sizeof(sock)) < 0) { 
+        return(-1); 
+    }
+
+    if (listen(res, 1) != 0) {
+	return(-1);
+    }
+
+    setsockopt(res, SOL_TCP, TCP_NODELAY, &one, sizeof(one));
 
     return res;
 }

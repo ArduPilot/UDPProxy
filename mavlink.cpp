@@ -60,17 +60,14 @@ void MAVLinkUDP::init(int _fd, mavlink_channel_t _chan, bool signing_required, i
     }
 }
 
-bool MAVLinkUDP::receive_message(const uint8_t *buf, size_t len, mavlink_message_t &msg)
+bool MAVLinkUDP::receive_message(uint8_t *&buf, ssize_t &len, mavlink_message_t &msg)
 {
     mavlink_status_t status {};
     status.packet_rx_drop_count = 0;
     got_bad_signature = false;
-    for (size_t i=0; i<len; i++) {
-        if (mavlink_parse_char(chan, buf[i], &msg, &status)) {
-            if (i < len-1) {
-                ::printf("Multi mavlink pkt in UDP %u/%u\n", unsigned(i+1), unsigned(len));
-            }
-            if (key_id != -1) {
+    while (len--) {
+	if (mavlink_parse_char(chan, *buf++, &msg, &status)) {
+	    if (key_id != -1) {
                 if (!key_loaded) {
                     if (periodic_warning()) {
                         mav_printf(MAV_SEVERITY_CRITICAL, "Need to setup support signing key");

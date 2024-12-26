@@ -1,5 +1,5 @@
 /*
-  UDP Proxy for MAVLink, with signing support
+  UDP (and TCP) Proxy for MAVLink, with signing support
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -38,7 +38,8 @@
 struct listen_port {
     struct listen_port *next;
     int port1, port2;
-    int sock1, sock2;
+    int sock1_udp, sock2_udp;
+    int sock1_tcp, sock2_tcp;
     pid_t pid;
 };
 
@@ -78,8 +79,10 @@ static void add_port(int port1, int port2)
     p->next = ports;
     p->port1 = port1;
     p->port2 = port2;
-    p->sock1 = -1;
-    p->sock2 = -1;
+    p->sock1_udp = -1;
+    p->sock2_udp = -1;
+    p->sock1_tcp = -1;
+    p->sock2_tcp = -1;
     p->pid = 0;
     ports = p;
     printf("Added port %d/%d\n", port1, port2);
@@ -109,7 +112,11 @@ static void main_loop(struct listen_port *p)
     double last_pkt1=0;
     double last_pkt2=0;
     uint32_t count1=0, count2=0;
-    int fdmax = MAX(p->sock1, p->sock2) + 1;
+    int fdmax = -1;
+    fdmax = MAX(fdmax, p->sock1_udp);
+    fdmax = MAX(fdmax, p->sock2_udp);
+    fdmax = MAX(fdmax, p->sock1_tcp);
+    fdmax = MAX(fdmax, p->sock2_tcp);
     MAVLinkUDP mav1, mav2;
 
     while (1) {
@@ -126,66 +133,165 @@ static void main_loop(struct listen_port *p)
         }
             
         FD_ZERO(&fds);
-        FD_SET(p->sock1, &fds);
-        FD_SET(p->sock2, &fds);
+        FD_SET(p->sock1_udp, &fds);
+        FD_SET(p->sock2_udp, &fds);
+	FD_SET(p->sock1_tcp, &fds);
+	FD_SET(p->sock2_tcp, &fds);
 
         tval.tv_sec = 10;
         tval.tv_usec = 0;
 
-        ret = select(fdmax, &fds, NULL, NULL, &tval);
+	ret = select(fdmax+1, &fds, NULL, NULL, &tval);
         if (ret == -1 && errno == EINTR) continue;
         if (ret <= 0) break;
 
         now = time_seconds();
 
-        if (FD_ISSET(p->sock1, &fds)) {
+        if (FD_ISSET(p->sock1_udp, &fds)) {
             struct sockaddr_in from;
             socklen_t fromlen = sizeof(from);
-            int n = recvfrom(p->sock1, buf, sizeof(buf), 0, 
+	    ssize_t n = recvfrom(p->sock1_udp, buf, sizeof(buf), 0,
                              (struct sockaddr *)&from, &fromlen);
             if (n <= 0) break;
             last_pkt1 = now;
             count1++;
             if (!have_conn1) {
-                if (connect(p->sock1, (struct sockaddr *)&from, fromlen) != 0) {
+                if (connect(p->sock1_udp, (struct sockaddr *)&from, fromlen) != 0) {
                     break;
                 }
-                mav1.init(p->sock1, MAVLINK_COMM_0, false);
+                mav1.init(p->sock1_udp, MAVLINK_COMM_0, false);
                 have_conn1 = true;
                 printf("[%d] %s have conn1 for from %s\n", unsigned(p->port2), time_string(), addr_to_str(from));
             }
             mavlink_message_t msg {};
-            if (have_conn2 && mav1.receive_message(buf, n, msg)) {
-                if (!mav2.send_message(msg)) {
-                    break;
-                }
+	    if (have_conn2) {
+		uint8_t *buf0 = buf;
+		bool failed = false;
+		while (n > 0 && mav1.receive_message(buf0, n, msg)) {
+		    if (!mav2.send_message(msg)) {
+			failed = true;
+			break;
+		    }
+		}
+		if (failed) {
+		    break;
+		}
             }
         }
 
-        if (FD_ISSET(p->sock2, &fds)) {
+        if (FD_ISSET(p->sock2_udp, &fds)) {
             struct sockaddr_in from;
             socklen_t fromlen = sizeof(from);
-            int n = recvfrom(p->sock2, buf, sizeof(buf), 0, 
+	    ssize_t n = recvfrom(p->sock2_udp, buf, sizeof(buf), 0,
                              (struct sockaddr *)&from, &fromlen);
             if (n <= 0) break;
             last_pkt2 = now;
             count2++;
             if (!have_conn2) {
-                if (connect(p->sock2, (struct sockaddr *)&from, fromlen) != 0) {
+                if (connect(p->sock2_udp, (struct sockaddr *)&from, fromlen) != 0) {
                     break;
                 }
-                mav2.init(p->sock2, MAVLINK_COMM_1, true, p->port2);
+                mav2.init(p->sock2_udp, MAVLINK_COMM_1, true, p->port2);
                 have_conn2 = true;
                 printf("[%u] %s have conn2 from %s\n", unsigned(p->port2), time_string(), addr_to_str(from));
             }
             mavlink_message_t msg {};
-            if (have_conn1 && mav2.receive_message(buf, n, msg)) {
-                if (!mav1.send_message(msg)) {
-                    break;
-                }
+	    if (have_conn1) {
+		uint8_t *buf0 = buf;
+		bool failed = false;
+		while (n > 0 && mav2.receive_message(buf0, n, msg)) {
+		    if (!mav1.send_message(msg)) {
+			failed = true;
+			break;
+		    }
+		}
+		if (failed) {
+		    break;
+		}
             }
-        }
+	}
+
+	if (FD_ISSET(p->sock1_tcp, &fds)) {
+	    struct sockaddr_in from;
+	    socklen_t fromlen = sizeof(from);
+	    if (!have_conn1) {
+		int fd2 = accept(p->sock1_tcp, (struct sockaddr *)&from, &fromlen);
+		if (fd2 < 0) {
+		    break;
+		}
+		close(p->sock1_tcp);
+		p->sock1_tcp = fd2;
+		fdmax = MAX(fdmax, p->sock1_tcp);
+		have_conn1 = true;
+		printf("[%d] %s have TCP conn1 for from %s\n", unsigned(p->port2), time_string(), addr_to_str(from));
+		mav1.init(p->sock1_tcp, MAVLINK_COMM_0, false);
+		last_pkt1 = now;
+		continue;
+	    }
+	    ssize_t n = recv(p->sock1_tcp, buf, sizeof(buf), 0);
+	    if (n <= 0) {
+		printf("[%d] %s EOF TCP conn1\n", unsigned(p->port2), time_string());
+		break;
+	    }
+	    last_pkt1 = now;
+            count1++;
+	    mavlink_message_t msg {};
+	    if (have_conn2) {
+		uint8_t *buf0 = buf;
+		bool failed = false;
+		while (n > 0 && mav1.receive_message(buf0, n, msg)) {
+		    if (!mav2.send_message(msg)) {
+			failed = true;
+			break;
+		    }
+		}
+		if (failed) {
+		    break;
+		}
+            }
+	}
+
+	if (FD_ISSET(p->sock2_tcp, &fds)) {
+	    struct sockaddr_in from;
+	    socklen_t fromlen = sizeof(from);
+	    if (!have_conn2) {
+		int fd2 = accept(p->sock2_tcp, (struct sockaddr *)&from, &fromlen);
+		if (fd2 < 0) {
+		    break;
+		}
+		close(p->sock2_tcp);
+		p->sock2_tcp = fd2;
+		fdmax = MAX(fdmax, p->sock2_tcp);
+		have_conn2 = true;
+		printf("[%d] %s have TCP conn2 for from %s\n", unsigned(p->port2), time_string(), addr_to_str(from));
+		mav2.init(p->sock2_tcp, MAVLINK_COMM_1, false);
+		last_pkt2 = now;
+		continue;
+	    }
+	    ssize_t n = recv(p->sock2_tcp, buf, sizeof(buf), 0);
+	    if (n <= 0) {
+		printf("[%d] %s EOF TCP conn2\n", unsigned(p->port2), time_string());
+		break;
+	    }
+	    last_pkt2 = now;
+	    count2++;
+	    mavlink_message_t msg {};
+	    if (have_conn1) {
+		uint8_t *buf0 = buf;
+		bool failed = false;
+		while (n > 0 && mav2.receive_message(buf0, n, msg)) {
+		    if (!mav1.send_message(msg)) {
+			failed = true;
+			break;
+		    }
+		}
+		if (failed) {
+		    break;
+		}
+            }
+	}
     }
+
     if (count1 != 0 || count2 != 0) {
         printf("[%d] %s Closed connection count1=%u count2=%u\n",
                p->port2,
@@ -209,29 +315,46 @@ static void main_loop(struct listen_port *p)
     }
 }
 
+static void close_socket(int *s)
+{
+    if (*s != -1) {
+	close(*s);
+	*s = -1;
+    }
+}
+
 /*
   open one socket pair
  */
 static void open_socket(struct listen_port *p)
 {
-    if (p->sock1 != -1) {
-        close(p->sock1);
-        p->sock1 = -1;
+    close_socket(&p->sock1_udp);
+    close_socket(&p->sock2_udp);
+    close_socket(&p->sock1_tcp);
+    close_socket(&p->sock2_tcp);
+
+    p->sock1_udp = open_socket_in_udp(p->port1);
+    if (p->sock1_udp == -1) {
+	printf("[%d] Failed to open UDP port %d for\n", p->port2, p->port1);
+        return;
     }
-    if (p->sock2 != -1) {
-        close(p->sock2);
-        p->sock2 = -1;
+    p->sock2_udp = open_socket_in_udp(p->port2);
+    if (p->sock2_udp == -1) {
+	printf("[%d] Failed to open UDP port %d\n", p->port2, p->port2);
+        close(p->sock1_udp);
+        p->sock1_udp = -1;
+        return;
     }
-    p->sock1 = open_socket_in(p->port1);
-    if (p->sock1 == -1) {
+    p->sock1_tcp = open_socket_in_tcp(p->port1);
+    if (p->sock1_tcp == -1) {
         printf("[%d] Failed to open port %d for\n", p->port2, p->port1);
         return;
     }
-    p->sock2 = open_socket_in(p->port2);
-    if (p->sock2 == -1) {
+    p->sock2_tcp = open_socket_in_tcp(p->port2);
+    if (p->sock2_tcp == -1) {
         printf("[%d] Failed to open port %d\n", p->port2, p->port2);
-        close(p->sock1);
-        p->sock1 = -1;
+        close(p->sock1_tcp);
+        p->sock1_tcp = -1;
         return;
     }
 }
@@ -298,15 +421,21 @@ static void wait_connection(void)
         fd_set fds;
         int ret;
         struct timeval tval;
-        int fdmax = 0;
+	int fdmax = -1;
 
         FD_ZERO(&fds);
         for (auto *p = ports; p; p=p->next) {
-            if (p->sock1 != -1 && p->sock2 != -1 && p->pid == 0) {
-                FD_SET(p->sock1, &fds);
-                FD_SET(p->sock2, &fds);
-                fdmax = MAX(fdmax, p->sock1);
-                fdmax = MAX(fdmax, p->sock2);
+            if (p->sock1_udp != -1 && p->sock2_udp != -1 && p->pid == 0) {
+                FD_SET(p->sock1_udp, &fds);
+                FD_SET(p->sock2_udp, &fds);
+                fdmax = MAX(fdmax, p->sock1_udp);
+                fdmax = MAX(fdmax, p->sock2_udp);
+            }
+	    if (p->sock1_tcp != -1 && p->sock2_tcp != -1 && p->pid == 0) {
+		FD_SET(p->sock1_tcp, &fds);
+		FD_SET(p->sock2_tcp, &fds);
+		fdmax = MAX(fdmax, p->sock1_tcp);
+		fdmax = MAX(fdmax, p->sock2_tcp);
             }
         }
         tval.tv_sec = 1;
@@ -326,8 +455,13 @@ static void wait_connection(void)
         }
 
         for (auto *p = ports; p; p=p->next) {
-            if (p->sock1 != -1 && p->sock2 != -1 && p->pid == 0) {
-                if (FD_ISSET(p->sock1, &fds) || FD_ISSET(p->sock2, &fds)) {
+            if (p->sock1_udp != -1 && p->sock2_udp != -1 && p->pid == 0) {
+                if (FD_ISSET(p->sock1_udp, &fds) || FD_ISSET(p->sock2_udp, &fds)) {
+                    handle_connection(p);
+                }
+            }
+	    if (p->sock1_tcp != -1 && p->sock2_tcp != -1 && p->pid == 0) {
+		if (FD_ISSET(p->sock1_tcp, &fds) || FD_ISSET(p->sock2_tcp, &fds)) {
                     handle_connection(p);
                 }
             }
