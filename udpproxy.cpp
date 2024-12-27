@@ -398,6 +398,11 @@ static void handle_connection(struct listen_port *p)
     }
     p->pid = pid;
     printf("[%d] New child %d\n", p->port2, int(p->pid));
+
+    close_socket(&p->sock1_udp);
+    close_socket(&p->sock2_udp);
+    close_socket(&p->sock1_tcp);
+    close_socket(&p->sock2_tcp);
 }
 
 static void reload_ports(void)
