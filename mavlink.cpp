@@ -174,6 +174,11 @@ bool MAVLinkUDP::send_message(const mavlink_message_t &msg)
     if (status == nullptr) {
         return false;
     }
+
+    // keep the sequence numbers aligned so if there are multiple system IDs we get correct
+    // packet loss information
+    status->current_tx_seq = msg.seq;
+
     mavlink_finalize_message_buffer(&msg2, msg2.sysid, msg2.compid, status, min_len, max_len, crc_extra);
 
     uint16_t len = mavlink_msg_to_send_buffer(buf, &msg2);
