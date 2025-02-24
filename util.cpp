@@ -52,13 +52,22 @@ int open_socket_in_udp(int port)
 }
 
 /*
+  setup TCP options for a socket
+*/
+void set_tcp_options(int fd)
+{
+    int one=1;
+    setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,(char *)&one,sizeof(one));
+    setsockopt(fd, SOL_TCP, TCP_NODELAY, &one, sizeof(one));
+}
+
+/*
   open a TCP socket on the given port
 */
 int open_socket_in_tcp(int port)
 {
     struct sockaddr_in sock;
     int res;
-    int one=1;
 
     memset(&sock,0,sizeof(sock));
 
@@ -74,9 +83,7 @@ int open_socket_in_tcp(int port)
         return -1;
     }
 
-    setsockopt(res,SOL_SOCKET,SO_REUSEADDR,(char *)&one,sizeof(one));
-
-    if (bind(res, (struct sockaddr *)&sock, sizeof(sock)) < 0) { 
+    if (bind(res, (struct sockaddr *)&sock, sizeof(sock)) < 0) {
         return(-1); 
     }
 
@@ -84,7 +91,7 @@ int open_socket_in_tcp(int port)
 	return(-1);
     }
 
-    setsockopt(res, SOL_TCP, TCP_NODELAY, &one, sizeof(one));
+    set_tcp_options(res);
 
     return res;
 }

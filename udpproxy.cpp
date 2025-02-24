@@ -64,7 +64,7 @@ static bool have_port2(int port2)
     return false;
 }
 
-static void open_socket(struct listen_port *p);
+static void open_sockets(struct listen_port *p);
 
 /*
   add a port pair to the list
@@ -86,7 +86,7 @@ static void add_port(int port1, int port2)
     p->pid = 0;
     ports = p;
     printf("Added port %d/%d\n", port1, port2);
-    open_socket(p);
+    open_sockets(p);
 }
 
 
@@ -219,6 +219,7 @@ static void main_loop(struct listen_port *p)
 		if (fd2 < 0) {
 		    break;
 		}
+		set_tcp_options(fd2);
 		close(p->sock1_tcp);
 		p->sock1_tcp = fd2;
 		fdmax = MAX(fdmax, p->sock1_tcp);
@@ -325,38 +326,48 @@ static void close_socket(int *s)
 }
 
 /*
-  open one socket pair
+  close all sockets
  */
-static void open_socket(struct listen_port *p)
+static void close_sockets(struct listen_port *p)
 {
     close_socket(&p->sock1_udp);
     close_socket(&p->sock2_udp);
     close_socket(&p->sock1_tcp);
     close_socket(&p->sock2_tcp);
+}
 
-    p->sock1_udp = open_socket_in_udp(p->port1);
+/*
+  open one socket pair
+ */
+static void open_sockets(struct listen_port *p)
+{
     if (p->sock1_udp == -1) {
-	printf("[%d] Failed to open UDP port %d for\n", p->port2, p->port1);
-        return;
+	p->sock1_udp = open_socket_in_udp(p->port1);
+	if (p->sock1_udp == -1) {
+	    printf("[%d] Failed to open UDP port %d - %s\n", p->port2, p->port1, strerror(errno));
+	}
     }
-    p->sock2_udp = open_socket_in_udp(p->port2);
     if (p->sock2_udp == -1) {
-	printf("[%d] Failed to open UDP port %d\n", p->port2, p->port2);
-        close(p->sock1_udp);
-        p->sock1_udp = -1;
-        return;
+	p->sock2_udp = open_socket_in_udp(p->port2);
+	if (p->sock2_udp == -1) {
+	    printf("[%d] Failed to open UDP port %d - %s\n", p->port2, p->port2, strerror(errno));
+	    close(p->sock1_udp);
+	    p->sock1_udp = -1;
+	}
     }
-    p->sock1_tcp = open_socket_in_tcp(p->port1);
     if (p->sock1_tcp == -1) {
-        printf("[%d] Failed to open port %d for\n", p->port2, p->port1);
-        return;
+	p->sock1_tcp = open_socket_in_tcp(p->port1);
+	if (p->sock1_tcp == -1) {
+	    printf("[%d] Failed to open TCP port %d - %s\n", p->port2, p->port1, strerror(errno));
+	}
     }
-    p->sock2_tcp = open_socket_in_tcp(p->port2);
     if (p->sock2_tcp == -1) {
-        printf("[%d] Failed to open port %d\n", p->port2, p->port2);
-        close(p->sock1_tcp);
-        p->sock1_tcp = -1;
-        return;
+	p->sock2_tcp = open_socket_in_tcp(p->port2);
+	if (p->sock2_tcp == -1) {
+	    printf("[%d] Failed to open TCP port %d - %s\n", p->port2, p->port2, strerror(errno));
+	    close(p->sock1_tcp);
+	    p->sock1_tcp = -1;
+	}
     }
 }
 
@@ -376,8 +387,8 @@ static void check_children(void)
             if (p->pid == pid) {
                 printf("[%d] Child %d exited\n", p->port2, int(pid));
                 p->pid = 0;
-                found_child = true;
-                open_socket(p);
+		found_child = true;
+		open_sockets(p);
                 break;
             }
         }
@@ -400,10 +411,7 @@ static void handle_connection(struct listen_port *p)
     p->pid = pid;
     printf("[%d] New child %d\n", p->port2, int(p->pid));
 
-    close_socket(&p->sock1_udp);
-    close_socket(&p->sock2_udp);
-    close_socket(&p->sock1_tcp);
-    close_socket(&p->sock2_tcp);
+    close_sockets(p);
 }
 
 static void reload_ports(void)
