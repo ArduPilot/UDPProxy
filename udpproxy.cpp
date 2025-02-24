@@ -259,12 +259,13 @@ static void main_loop(struct listen_port *p)
 		if (fd2 < 0) {
 		    break;
 		}
+		set_tcp_options(fd2);
 		close(p->sock2_tcp);
 		p->sock2_tcp = fd2;
 		fdmax = MAX(fdmax, p->sock2_tcp);
 		have_conn2 = true;
 		printf("[%d] %s have TCP conn2 for from %s\n", unsigned(p->port2), time_string(), addr_to_str(from));
-		mav2.init(p->sock2_tcp, MAVLINK_COMM_1, false);
+		mav2.init(p->sock2_tcp, MAVLINK_COMM_1, true, p->port2);
 		last_pkt2 = now;
 		continue;
 	    }
