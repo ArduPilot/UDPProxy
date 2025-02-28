@@ -24,6 +24,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <signal.h>
 #include "util.h"
 
 mavlink_system_t mavlink_system = {0, 0};
@@ -296,6 +297,7 @@ void MAVLinkUDP::update_signing_timestamp()
 
     // save to stable storage as a child process to minimise latency
     // in this process
+    signal(SIGCHLD, SIG_IGN);
     if (fork() == 0) {
 	save_signing_timestamp();
 	exit(0);
