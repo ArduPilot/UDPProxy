@@ -351,8 +351,6 @@ static void open_sockets(struct listen_port *p)
 	p->sock2_udp = open_socket_in_udp(p->port2);
 	if (p->sock2_udp == -1) {
 	    printf("[%d] Failed to open UDP port %d - %s\n", p->port2, p->port2, strerror(errno));
-	    close(p->sock1_udp);
-	    p->sock1_udp = -1;
 	}
     }
     if (p->sock1_tcp == -1) {
@@ -365,8 +363,6 @@ static void open_sockets(struct listen_port *p)
 	p->sock2_tcp = open_socket_in_tcp(p->port2);
 	if (p->sock2_tcp == -1) {
 	    printf("[%d] Failed to open TCP port %d - %s\n", p->port2, p->port2, strerror(errno));
-	    close(p->sock1_tcp);
-	    p->sock1_tcp = -1;
 	}
     }
 }
@@ -423,6 +419,13 @@ static void reload_ports(void)
     }
     tdb_traverse(db, handle_record, nullptr);
     db_close(db);
+
+    // see if any sockets need opening
+    for (auto *p = ports; p; p=p->next) {
+	if (p->pid == 0) {
+	    open_sockets(p);
+	}
+    }
 }
 
 /*

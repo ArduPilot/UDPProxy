@@ -273,6 +273,7 @@ void MAVLinkUDP::update_signing_timestamp()
     if (now - last_signing_save_s < 10) {
         return;
     }
+    last_signing_save_s = now;
     uint64_t signing_timestamp = now;
     // this is the offset from 1/1/1970 to 1/1/2015
     const uint64_t epoch_offset = 1420070400ULL;
@@ -292,8 +293,12 @@ void MAVLinkUDP::update_signing_timestamp()
         }
     }
 
-    // save to stable storage
-    save_signing_timestamp();
+    // save to stable storage as a child process to minimise latency
+    // in this process
+    if (fork() == 0) {
+	save_signing_timestamp();
+	exit(0);
+    }
 }
 
 
@@ -324,7 +329,7 @@ void MAVLinkUDP::save_signing_timestamp(void)
     if (need_save) {
         // save updated key
         save_key(db, key_id);
-        db_close_commit(db);
+	db_close_commit(db);
     } else {
         db_close_cancel(db);
     }

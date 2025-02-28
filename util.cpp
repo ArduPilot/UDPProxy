@@ -83,6 +83,8 @@ int open_socket_in_tcp(int port)
         return -1;
     }
 
+    set_tcp_options(res);
+
     if (bind(res, (struct sockaddr *)&sock, sizeof(sock)) < 0) {
         return(-1); 
     }
