@@ -23,6 +23,7 @@
 #include <sys/time.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include "util.h"
 
 mavlink_system_t mavlink_system = {0, 0};
