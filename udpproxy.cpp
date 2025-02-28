@@ -401,8 +401,13 @@ static void handle_connection(struct listen_port *p)
 {
     pid_t pid = fork();
     if (pid == 0) {
-        main_loop(p);
-        exit(0);
+	for (auto *p2 = ports; p2; p2=p2->next) {
+	    if (p2 != p) {
+		close_sockets(p2);
+	    }
+	}
+	main_loop(p);
+	exit(0);
     }
     p->pid = pid;
     printf("[%d] New child %d\n", p->port2, int(p->pid));
