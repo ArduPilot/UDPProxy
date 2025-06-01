@@ -117,7 +117,7 @@ static void main_loop(struct listen_port *p)
     fdmax = MAX(fdmax, p->sock2_udp);
     fdmax = MAX(fdmax, p->sock1_tcp);
     fdmax = MAX(fdmax, p->sock2_tcp);
-    MAVLinkUDP mav1, mav2;
+    MAVLink mav1, mav2;
 
     while (1) {
         fd_set fds;
