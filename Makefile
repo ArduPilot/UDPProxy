@@ -12,9 +12,9 @@ CC=gcc
 CFLAGS=-Wall -g -DSTANDALONE
 CXXFLAGS=-Wall -g -Werror
 
-LIBS=-ltdb
+LIBS=-ltdb -lssl -lcrypto
 
-udpproxy: udpproxy.o mavlink.o util.o keydb.o
+udpproxy: udpproxy.o mavlink.o util.o keydb.o websocket.o
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LIBS)
 
 clean:

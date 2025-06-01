@@ -33,7 +33,7 @@
 #include "mavlink.h"
 #include "util.h"
 #include "keydb.h"
-
+#include "websocket.h"
 
 struct listen_port {
     struct listen_port *next;
@@ -41,6 +41,7 @@ struct listen_port {
     int sock1_udp, sock2_udp;
     int sock1_tcp, sock2_tcp;
     pid_t pid;
+    WebSocket *ws;
 };
 
 static struct listen_port *ports;
@@ -104,6 +105,17 @@ static int handle_record(struct tdb_context *db, TDB_DATA key, TDB_DATA data, vo
     return 0;
 }
 
+struct listen_port *main_loop_port;
+
+/*
+  send on a websocket
+ */
+static ssize_t ws_send(int sockfd, const void *buf, size_t len, int flags)
+{
+    return main_loop_port->ws->send(buf, len);
+}
+
+
 static void main_loop(struct listen_port *p)
 {
     unsigned char buf[10240];
@@ -118,6 +130,8 @@ static void main_loop(struct listen_port *p)
     fdmax = MAX(fdmax, p->sock1_tcp);
     fdmax = MAX(fdmax, p->sock2_tcp);
     MAVLink mav1, mav2;
+
+    main_loop_port = p;
 
     while (1) {
         fd_set fds;
@@ -159,7 +173,7 @@ static void main_loop(struct listen_port *p)
                 if (connect(p->sock1_udp, (struct sockaddr *)&from, fromlen) != 0) {
                     break;
                 }
-                mav1.init(p->sock1_udp, MAVLINK_COMM_0, false);
+		mav1.init(p->sock1_udp, MAVLINK_COMM_0, false, false);
                 have_conn1 = true;
                 printf("[%d] %s have conn1 for from %s\n", unsigned(p->port2), time_string(), addr_to_str(from));
             }
@@ -191,7 +205,7 @@ static void main_loop(struct listen_port *p)
                 if (connect(p->sock2_udp, (struct sockaddr *)&from, fromlen) != 0) {
                     break;
                 }
-                mav2.init(p->sock2_udp, MAVLINK_COMM_1, true, p->port2);
+		mav2.init(p->sock2_udp, MAVLINK_COMM_1, true, false, p->port2);
                 have_conn2 = true;
                 printf("[%u] %s have conn2 from %s\n", unsigned(p->port2), time_string(), addr_to_str(from));
             }
@@ -225,7 +239,7 @@ static void main_loop(struct listen_port *p)
 		fdmax = MAX(fdmax, p->sock1_tcp);
 		have_conn1 = true;
 		printf("[%d] %s have TCP conn1 for from %s\n", unsigned(p->port2), time_string(), addr_to_str(from));
-		mav1.init(p->sock1_tcp, MAVLINK_COMM_0, false);
+		mav1.init(p->sock1_tcp, MAVLINK_COMM_0, false, false);
 		last_pkt1 = now;
 		continue;
 	    }
@@ -266,14 +280,32 @@ static void main_loop(struct listen_port *p)
 		fdmax = MAX(fdmax, p->sock2_tcp);
 		have_conn2 = true;
 		printf("[%d] %s have TCP conn2 for from %s\n", unsigned(p->port2), time_string(), addr_to_str(from));
-		mav2.init(p->sock2_tcp, MAVLINK_COMM_1, true, p->port2);
+		mav2.init(p->sock2_tcp, MAVLINK_COMM_1, true, true, p->port2);
 		last_pkt2 = now;
 		continue;
 	    }
-	    ssize_t n = recv(p->sock2_tcp, buf, sizeof(buf), 0);
+	    ssize_t n = recv(p->sock2_tcp, buf, sizeof(buf)-1, 0);
 	    if (n <= 0) {
 		printf("[%d] %s EOF TCP conn2\n", unsigned(p->port2), time_string());
 		break;
+	    }
+	    buf[n] = 0;
+	    if (count2 == 0 &&
+		strncmp((const char *)buf, "GET / HTTP/1.1", 14) == 0 &&
+		strcasestr((const char *)buf, "\r\nUpgrade: websocket\r\n")) {
+		p->ws = new WebSocket(p->sock2_tcp, (const char *)buf);
+		if (p->ws == nullptr) {
+		    break;
+		}
+		mav2.set_send(&ws_send);
+		printf("[%d] %s WebSocket conn2\n", unsigned(p->port2), time_string());
+	    }
+	    if (p->ws) {
+		n = p->ws->decode(buf, n);
+		if (n <= 0) {
+		    printf("[%d] %s WebSocket EOF TCP conn2\n", unsigned(p->port2), time_string());
+		    break;
+		}
 	    }
 	    last_pkt2 = now;
 	    count2++;

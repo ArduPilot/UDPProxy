@@ -39,7 +39,7 @@ void comm_send_buffer(mavlink_channel_t chan, const uint8_t *buf, uint8_t len)
 /*
   init connection
  */
-void MAVLink::init(int _fd, mavlink_channel_t _chan, bool signing_required, int _key_id)
+void MAVLink::init(int _fd, mavlink_channel_t _chan, bool signing_required, bool _allow_websocket, int _key_id)
 {
     fd = _fd;
     chan = _chan;
@@ -52,6 +52,7 @@ void MAVLink::init(int _fd, mavlink_channel_t _chan, bool signing_required, int 
     last_sysid = 0;
     last_compid = 0;
     bad_sig_count = 0;
+    allow_websocket = _allow_websocket;
 
     ZERO_STRUCT(signing_streams);
     ZERO_STRUCT(signing);
@@ -60,6 +61,8 @@ void MAVLink::init(int _fd, mavlink_channel_t _chan, bool signing_required, int 
         load_signing_key(key_id);
         update_signing_timestamp();
     }
+
+    send_fn = send;
 }
 
 bool MAVLink::receive_message(uint8_t *&buf, ssize_t &len, mavlink_message_t &msg)
@@ -157,7 +160,7 @@ bool MAVLink::send_message(const mavlink_message_t &msg)
             if (!got_signed_packet) {
                 uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
                 if (len > 0) {
-                    send(fd, buf, len, 0);
+		    send_fn(fd, buf, len, 0);
                 }
             }
         }
@@ -185,7 +188,7 @@ bool MAVLink::send_message(const mavlink_message_t &msg)
 
     uint16_t len = mavlink_msg_to_send_buffer(buf, &msg2);
     if (len > 0) {
-        return send(fd, buf, len, 0) == len;
+	return send_fn(fd, buf, len, 0) == len;
     }
     return false;
 }
@@ -362,7 +365,7 @@ void MAVLink::mav_printf(uint8_t severity, const char *fmt, ...)
     uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
     if (len > 0) {
         ::printf("[%d]: %s\n", key_id, text);
-        send(fd, buf, len, 0);
+	send_fn(fd, buf, len, 0);
     }
 }
 
