@@ -29,7 +29,7 @@
 
 mavlink_system_t mavlink_system = {0, 0};
 
-bool MAVLinkUDP::got_bad_signature;
+bool MAVLink::got_bad_signature;
 
 // unused comm_send_buffer (as we handle packets as UDP buffers)
 void comm_send_buffer(mavlink_channel_t chan, const uint8_t *buf, uint8_t len)
@@ -39,7 +39,7 @@ void comm_send_buffer(mavlink_channel_t chan, const uint8_t *buf, uint8_t len)
 /*
   init connection
  */
-void MAVLinkUDP::init(int _fd, mavlink_channel_t _chan, bool signing_required, int _key_id)
+void MAVLink::init(int _fd, mavlink_channel_t _chan, bool signing_required, int _key_id)
 {
     fd = _fd;
     chan = _chan;
@@ -62,7 +62,7 @@ void MAVLinkUDP::init(int _fd, mavlink_channel_t _chan, bool signing_required, i
     }
 }
 
-bool MAVLinkUDP::receive_message(uint8_t *&buf, ssize_t &len, mavlink_message_t &msg)
+bool MAVLink::receive_message(uint8_t *&buf, ssize_t &len, mavlink_message_t &msg)
 {
     mavlink_status_t status {};
     status.packet_rx_drop_count = 0;
@@ -135,7 +135,7 @@ bool MAVLinkUDP::receive_message(uint8_t *&buf, ssize_t &len, mavlink_message_t 
     return false;
 }
 
-bool MAVLinkUDP::send_message(const mavlink_message_t &msg)
+bool MAVLink::send_message(const mavlink_message_t &msg)
 {
     mavlink_message_t msg2 = msg;
     uint8_t buf[300];
@@ -193,7 +193,7 @@ bool MAVLinkUDP::send_message(const mavlink_message_t &msg)
 /*
   callback to accept unsigned (or incorrectly signed) packets
  */
-bool MAVLinkUDP::accept_unsigned_callback(const mavlink_status_t *status, uint32_t msgId)
+bool MAVLink::accept_unsigned_callback(const mavlink_status_t *status, uint32_t msgId)
 {
     // we accept all and use status to check in receive_message()
     got_bad_signature = true;
@@ -203,7 +203,7 @@ bool MAVLinkUDP::accept_unsigned_callback(const mavlink_status_t *status, uint32
 /*
   load key from keys.tdb
  */
-bool MAVLinkUDP::load_key(TDB_CONTEXT *tdb, int key_id)
+bool MAVLink::load_key(TDB_CONTEXT *tdb, int key_id)
 {
     return db_load_key(tdb, key_id, key);
 }
@@ -211,7 +211,7 @@ bool MAVLinkUDP::load_key(TDB_CONTEXT *tdb, int key_id)
 /*
   save key to keys.tdb
  */
-bool MAVLinkUDP::save_key(TDB_CONTEXT *tdb, int key_id)
+bool MAVLink::save_key(TDB_CONTEXT *tdb, int key_id)
 {
     return db_save_key(tdb, key_id, key);
 }
@@ -219,7 +219,7 @@ bool MAVLinkUDP::save_key(TDB_CONTEXT *tdb, int key_id)
 /*
   load signing key
  */
-void MAVLinkUDP::load_signing_key(int key_id)
+void MAVLink::load_signing_key(int key_id)
 {
     mavlink_status_t *status = mavlink_get_channel_status(chan);
     if (status == nullptr) {
@@ -269,7 +269,7 @@ void MAVLinkUDP::load_signing_key(int key_id)
   update signing timestamp. This is called when we get GPS lock
   timestamp_usec is since 1/1/1970 (the epoch)
  */
-void MAVLinkUDP::update_signing_timestamp()
+void MAVLink::update_signing_timestamp()
 {
     double now = time_seconds();
     if (now - last_signing_save_s < 10) {
@@ -308,7 +308,7 @@ void MAVLinkUDP::update_signing_timestamp()
 /*
   save the signing timestamp periodically
  */
-void MAVLinkUDP::save_signing_timestamp(void)
+void MAVLink::save_signing_timestamp(void)
 {
     auto *db = db_open_transaction();
     if (db == nullptr) {
@@ -341,7 +341,7 @@ void MAVLinkUDP::save_signing_timestamp(void)
 /*
   printf via MAVLink STATUSTEXT for communicating from proxy to support engineer
  */
-void MAVLinkUDP::mav_printf(uint8_t severity, const char *fmt, ...)
+void MAVLink::mav_printf(uint8_t severity, const char *fmt, ...)
 {
     va_list arg_list;
     char text[MAVLINK_MSG_STATUSTEXT_FIELD_TEXT_LEN+1] {};
@@ -369,7 +369,7 @@ void MAVLinkUDP::mav_printf(uint8_t severity, const char *fmt, ...)
 /*
   control periodic warnings to user
  */
-bool MAVLinkUDP::periodic_warning(void)
+bool MAVLink::periodic_warning(void)
 {
     double now = time_seconds();
     if (now - last_signing_warning_s > 2) {
@@ -383,7 +383,7 @@ bool MAVLinkUDP::periodic_warning(void)
   handle a (signed) SETUP_SIGNING request
   this is used to change the support signing key
  */
-void MAVLinkUDP::handle_setup_signing(const mavlink_message_t &msg)
+void MAVLink::handle_setup_signing(const mavlink_message_t &msg)
 {
     mavlink_setup_signing_t packet;
     mavlink_msg_setup_signing_decode(&msg, &packet);

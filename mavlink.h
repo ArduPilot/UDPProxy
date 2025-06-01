@@ -9,7 +9,7 @@
 /*
   abstraction for MAVLink on UDP
  */
-class MAVLinkUDP {
+class MAVLink {
 public:
     void init(int fd, mavlink_channel_t chan, bool signing_required, int key_id=-1);
     bool receive_message(uint8_t *&buf, ssize_t &len, mavlink_message_t &msg);
