@@ -12,6 +12,7 @@ For more information on using the support proxy see https://support.ardupilot.or
  - uses MAVLink2 signed connections from the support engineer
  - uses normal UDP/TCP forwarding in users GCS
  - supports both TCP and UDP, including mixed connections
+ - supports WebSocket TCP connections on support engineer side
 
 ## Setup
 
@@ -24,10 +25,21 @@ For example:
 
 that will add a single support engineer 'Support1' where the user will
 connect to port 10001 and the support engineer will connect to port
-10002.
+10002. You may wish to adopt a convention where the user connects on
+even port numbers and the support engineer on odd numbers, or you may
+prefer to have an offset, such as 10005 for a user and 20005 for the
+support engineer.
 
 Once the database is setup you should start udpproxy and it will
-listen on all ports.
+listen on all configured ports.
+
+To automatically start UDPProxy at boot and re-start if needed use
+crontab lines like this:
+
+```
+*/1 * * * * $HOME/UDPProxy/start_proxy.sh
+@reboot $HOME/UDPProxy/start_proxy.sh
+```
 
 ## keydb.py usage
 
@@ -42,7 +54,7 @@ The following keydb.py commands are available:
  - keydb.py setport1 PORT2 PORT1
 
 When new users are added the udpproxy process starts listening on the
-new port automatically.
+new port automatically without restarting.
 
 ## License
 
