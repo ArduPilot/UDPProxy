@@ -14,12 +14,21 @@ For more information on using the support proxy see https://support.ardupilot.or
  - supports both TCP and UDP, including mixed connections
  - supports WebSocket TCP connections on support engineer side
 
+## Building
+
+You need pymavlink installed to generate the mavlink headers. Install
+with "python3 -m pip install pymavlink"
+
+Then run "make" to build
+
 ## Setup
 
 udpproxy should be run on a machine with a public IP address. You
-should initialise the database 'keys.tdb' using the keydb.py script.
+should initialise the database 'keys.tdb' once using the keydb.py script.
 
-For example:
+ - keydb.py initialise
+
+Then add your users:
 
  - keydb.py add 10001 10002 'Support1' MySecurePassPhrase
 

@@ -2,9 +2,16 @@
 
 .PHONY: headers
 
-all: udpproxy
+all: modules headers udpproxy
 
-headers:
+modules: modules/mavlink/message_definitions/v1.0/all.xml
+
+modules/mavlink/message_definitions/v1.0/all.xml:
+	@git submodule update --init --recursive
+
+headers: libraries/mavlink2/generated/protocol.h
+
+libraries/mavlink2/generated/protocol.h: modules/mavlink/message_definitions/v1.0/all.xml
 	@./regen_headers.sh
 
 CXX=g++
