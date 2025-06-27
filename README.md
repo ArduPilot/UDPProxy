@@ -16,8 +16,9 @@ For more information on using the support proxy see https://support.ardupilot.or
 
 ## Building
 
-You need pymavlink installed to generate the mavlink headers. Install
-with "python3 -m pip install pymavlink"
+You need some packages, install with:
+ - python3 -m pip install pymavlink
+ - sudo apt install libtdb-dev python3-tdb
 
 Then run "make" to build
 
