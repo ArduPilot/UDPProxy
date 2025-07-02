@@ -1,0 +1,38 @@
+# Git
+.git
+.gitignore
+.gitmodules
+
+# Documentation
+README.md
+*.md
+
+# Build artifacts
+*.o
+udpproxy
+venv/
+libraries/
+
+# Logs
+*.log
+cron.log
+proxy.log
+
+# Database files (these should be mounted as volumes)
+*.tdb
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker files
+Dockerfile
+.dockerignore
+docker-compose.yml
