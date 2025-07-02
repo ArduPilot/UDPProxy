@@ -2,3 +2,7 @@
 *.o
 set_key
 udpproxy
+libraries/
+venv/
+__pycache__/
+*.pyc
