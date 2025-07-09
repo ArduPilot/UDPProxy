@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="800" height="600" fill="#f8f9fa"/>
+  
+  <!-- Title -->
+  <text x="400" y="30" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="#2c3e50">UDPProxy for MAVLink Remote Support</text>
+  
+  <!-- User Side (Left) -->
+  <g id="user-side">
+    <!-- User Network Box -->
+    <rect x="50" y="80" width="200" height="300" fill="#e8f4fd" stroke="#3498db" stroke-width="2" rx="10"/>
+    <text x="150" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#2c3e50">User's Private Network</text>
+    
+    <!-- User Device -->
+    <rect x="80" y="130" width="140" height="80" fill="#ecf0f1" stroke="#34495e" stroke-width="1" rx="5"/>
+    <text x="150" y="155" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="#2c3e50">User's Computer</text>
+    <text x="150" y="170" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#7f8c8d">Ground Control Station</text>
+    <text x="150" y="185" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#7f8c8d">(Mission Planner, QGC)</text>
+    <text x="150" y="200" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#27ae60">192.168.1.100</text>
+    
+    <!-- Drone -->
+    <ellipse cx="150" cy="260" rx="60" ry="25" fill="#f39c12" stroke="#d68910" stroke-width="2"/>
+    <text x="150" y="265" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="white">Drone/Vehicle</text>
+    
+    <!-- Connection between User and Drone -->
+    <line x1="150" y1="210" x2="150" y2="235" stroke="#27ae60" stroke-width="2"/>
+    <text x="170" y="225" font-family="Arial, sans-serif" font-size="9" fill="#27ae60">MAVLink</text>
+    
+    <!-- NAT/Firewall -->
+    <rect x="70" y="320" width="160" height="30" fill="#e74c3c" stroke="#c0392b" stroke-width="1" rx="5"/>
+    <text x="150" y="340" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="white">NAT/Firewall</text>
+  </g>
+  
+  <!-- Internet Cloud -->
+  <g id="internet">
+    <ellipse cx="400" cy="200" rx="80" ry="40" fill="#3498db" stroke="#2980b9" stroke-width="2"/>
+    <text x="400" y="195" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="white">Internet</text>
+    <text x="400" y="210" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#ecf0f1">Public Network</text>
+  </g>
+  
+  <!-- UDPProxy Server (Center) -->
+  <g id="proxy-server">
+    <rect x="320" y="300" width="160" height="120" fill="#2ecc71" stroke="#27ae60" stroke-width="3" rx="10"/>
+    <text x="400" y="325" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="white">UDPProxy Server</text>
+    <text x="400" y="345" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ecf0f1">Public IP: 203.0.113.50</text>
+    
+    <!-- Port mapping -->
+    <rect x="330" y="360" width="140" height="50" fill="#27ae60" stroke="#229954" stroke-width="1" rx="3"/>
+    <text x="400" y="375" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="white">Port Mapping:</text>
+    <text x="400" y="390" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" fill="#ecf0f1">User: 10001 ↔ Engineer: 10002</text>
+    <text x="400" y="402" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" fill="#ecf0f1">User: 10003 ↔ Engineer: 10004</text>
+  </g>
+  
+  <!-- Support Engineer Side (Right) -->
+  <g id="engineer-side">
+    <!-- Engineer Network Box -->
+    <rect x="550" y="80" width="200" height="300" fill="#fdf2e9" stroke="#e67e22" stroke-width="2" rx="10"/>
+    <text x="650" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#2c3e50">Engineer's Private Network</text>
+    
+    <!-- Engineer Device -->
+    <rect x="580" y="130" width="140" height="80" fill="#ecf0f1" stroke="#34495e" stroke-width="1" rx="5"/>
+    <text x="650" y="155" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="#2c3e50">Support Engineer</text>
+    <text x="650" y="170" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#7f8c8d">MAVLink Tools</text>
+    <text x="650" y="185" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#7f8c8d">(Signed Connection)</text>
+    <text x="650" y="200" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#e67e22">10.0.0.50</text>
+    
+    <!-- Security Key -->
+    <rect x="590" y="230" width="120" height="40" fill="#f1c40f" stroke="#f39c12" stroke-width="1" rx="5"/>
+    <text x="650" y="245" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="bold" fill="#2c3e50">Security Key</text>
+    <text x="650" y="260" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" fill="#7f8c8d">MAVLink2 Signed</text>
+    
+    <!-- NAT/Firewall -->
+    <rect x="570" y="320" width="160" height="30" fill="#e74c3c" stroke="#c0392b" stroke-width="1" rx="5"/>
+    <text x="650" y="340" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="white">NAT/Firewall</text>
+  </g>
+  
+  <!-- Connection Lines -->
+  <!-- User to Proxy -->
+  <path d="M 250 200 Q 300 150 320 200" fill="none" stroke="#3498db" stroke-width="3" marker-end="url(#arrowblue)"/>
+  <text x="285" y="160" font-family="Arial, sans-serif" font-size="10" fill="#3498db">Port 10001</text>
+  <text x="285" y="175" font-family="Arial, sans-serif" font-size="9" fill="#7f8c8d">UDP/TCP</text>
+  
+  <!-- Proxy to Engineer -->
+  <path d="M 480 200 Q 530 150 550 200" fill="none" stroke="#e67e22" stroke-width="3" marker-end="url(#arroworange)"/>
+  <text x="500" y="160" font-family="Arial, sans-serif" font-size="10" fill="#e67e22">Port 10002</text>
+  <text x="500" y="175" font-family="Arial, sans-serif" font-size="9" fill="#7f8c8d">Signed MAVLink2</text>
+  
+  <!-- Bidirectional indicators -->
+  <path d="M 320 220 Q 300 170 250 220" fill="none" stroke="#3498db" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#arrowblue)"/>
+  <path d="M 550 220 Q 530 170 480 220" fill="none" stroke="#e67e22" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#arroworange)"/>
+  
+  <!-- Legend -->
+  <g id="legend">
+    <rect x="50" y="450" width="700" height="120" fill="#ffffff" stroke="#bdc3c7" stroke-width="1" rx="5"/>
+    <text x="400" y="475" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#2c3e50">How UDPProxy Works</text>
+    
+    <text x="70" y="495" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="#2c3e50">1. Setup:</text>
+    <text x="70" y="510" font-family="Arial, sans-serif" font-size="10" fill="#7f8c8d">• UDPProxy runs on a server with public IP address</text>
+    <text x="70" y="525" font-family="Arial, sans-serif" font-size="10" fill="#7f8c8d">• Database maps user ports to engineer ports with authentication</text>
+    
+    <text x="400" y="495" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="#2c3e50">2. Connection:</text>
+    <text x="400" y="510" font-family="Arial, sans-serif" font-size="10" fill="#7f8c8d">• User connects GCS to proxy (port 10001)</text>
+    <text x="400" y="525" font-family="Arial, sans-serif" font-size="10" fill="#7f8c8d">• Engineer connects with signed MAVLink2 (port 10002)</text>
+    
+    <text x="70" y="545" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="#2c3e50">3. Benefits:</text>
+    <text x="70" y="560" font-family="Arial, sans-serif" font-size="10" fill="#7f8c8d">• Both sides can be behind NAT/firewalls • Secure authenticated connections • Multiple users supported</text>
+  </g>
+  
+  <!-- Arrow markers -->
+  <defs>
+    <marker id="arrowblue" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#3498db"/>
+    </marker>
+    <marker id="arroworange" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#e67e22"/>
+    </marker>
+  </defs>
+</svg>
