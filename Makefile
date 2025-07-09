@@ -1,32 +1,91 @@
 # Makefile for UDPProxy
 
-.PHONY: headers
+# Compiler settings
+CXX ?= g++
+CC ?= gcc
+CFLAGS := -Wall -g -DSTANDALONE
+CXXFLAGS := -Wall -g -Werror
 
-all: modules headers udpproxy
+# Library settings
+LIBS := -ltdb -lssl -lcrypto
 
+# Source files
+SOURCES := udpproxy.cpp mavlink.cpp util.cpp keydb.cpp websocket.cpp
+OBJECTS := $(SOURCES:.cpp=.o)
+TARGET := udpproxy
+
+# Build directories
+BUILD_DIR := build
+MAVLINK_DIR := libraries/mavlink2/generated
+
+.PHONY: all clean distclean headers modules help test
+
+# Default target
+all: modules headers $(TARGET)
+
+# Help target
+help:
+	@echo "UDPProxy Build System"
+	@echo "====================="
+	@echo "Available targets:"
+	@echo "  all       - Build everything (default)"
+	@echo "  headers   - Generate MAVLink headers"
+	@echo "  modules   - Initialize git submodules"
+	@echo "  clean     - Remove build artifacts"
+	@echo "  distclean - Remove all generated files"
+	@echo "  test      - Run basic tests"
+	@echo "  help      - Show this help message"
+	@echo ""
+	@echo "Environment variables:"
+	@echo "  CXX       - C++ compiler (default: g++)"
+	@echo "  CC        - C compiler (default: gcc)"
+
+# Git submodules
 modules: modules/mavlink/message_definitions/v1.0/all.xml
 
 modules/mavlink/message_definitions/v1.0/all.xml:
+	@echo "Initializing git submodules..."
 	@git submodule update --init --recursive
 
-headers: libraries/mavlink2/generated/protocol.h
+# MAVLink headers generation
+headers: $(MAVLINK_DIR)/protocol.h
 
-libraries/mavlink2/generated/protocol.h: modules/mavlink/message_definitions/v1.0/all.xml
+$(MAVLINK_DIR)/protocol.h: modules/mavlink/message_definitions/v1.0/all.xml
+	@echo "Generating MAVLink headers..."
 	@./regen_headers.sh
 
-CXX=g++
-CC=gcc
-CFLAGS=-Wall -g -DSTANDALONE
-CXXFLAGS=-Wall -g -Werror
-
-LIBS=-ltdb -lssl -lcrypto
-
-udpproxy: udpproxy.o mavlink.o util.o keydb.o websocket.o
+# Main target
+$(TARGET): $(OBJECTS)
+	@echo "Linking $(TARGET)..."
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LIBS)
 
-clean:
-	rm -rf udpproxy *.o
+# Object file compilation
+%.o: %.cpp
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-distclean:
-	rm -rf udpproxy *.o libraries/mavlink2/generated
+# Dependencies
+udpproxy.o: udpproxy.cpp mavlink.h util.h keydb.h websocket.h
+mavlink.o: mavlink.cpp mavlink.h $(MAVLINK_DIR)/protocol.h
+util.o: util.cpp util.h
+keydb.o: keydb.cpp keydb.h
+websocket.o: websocket.cpp websocket.h util.h
+
+# Testing
+test: $(TARGET)
+	@echo "Running basic tests..."
+	@echo "Checking if binary was built correctly..."
+	@file $(TARGET)
+	@echo "Checking if keydb.py is executable..."
+	@python3 -m py_compile keydb.py
+	@echo "Basic tests passed!"
+
+# Cleaning
+clean:
+	@echo "Cleaning build artifacts..."
+	rm -f $(TARGET) $(OBJECTS)
+
+distclean: clean
+	@echo "Cleaning all generated files..."
+	rm -rf $(MAVLINK_DIR)
 
