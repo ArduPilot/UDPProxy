@@ -59,7 +59,7 @@ void MAVLink::init(int _fd, mavlink_channel_t _chan, bool signing_required, bool
     ZERO_STRUCT(signing);
 
     if (signing_required) {
-        load_signing_key(key_id);
+	load_signing_key();
         update_signing_timestamp();
     }
 
@@ -212,7 +212,7 @@ bool MAVLink::accept_unsigned_callback(const mavlink_status_t *status, uint32_t 
 /*
   load key from keys.tdb
  */
-bool MAVLink::load_key(TDB_CONTEXT *tdb, int key_id)
+bool MAVLink::load_key(TDB_CONTEXT *tdb)
 {
     return db_load_key(tdb, key_id, key);
 }
@@ -220,7 +220,7 @@ bool MAVLink::load_key(TDB_CONTEXT *tdb, int key_id)
 /*
   save key to keys.tdb
  */
-bool MAVLink::save_key(TDB_CONTEXT *tdb, int key_id)
+bool MAVLink::save_key(TDB_CONTEXT *tdb)
 {
     return db_save_key(tdb, key_id, key);
 }
@@ -228,7 +228,7 @@ bool MAVLink::save_key(TDB_CONTEXT *tdb, int key_id)
 /*
   load signing key
  */
-void MAVLink::load_signing_key(int key_id)
+void MAVLink::load_signing_key(void)
 {
     mavlink_status_t *status = mavlink_get_channel_status(chan);
     if (status == nullptr) {
@@ -237,7 +237,7 @@ void MAVLink::load_signing_key(int key_id)
     }
     auto *db = db_open();
     // we fallback to the default key ID of 0 if no signing key
-    if (!load_key(db, key_id)) {
+    if (!load_key(db)) {
         ::printf("Failed to find signing key for ID %d\n", key_id);
         db_close(db);
         return;
@@ -297,8 +297,8 @@ void MAVLink::update_signing_timestamp()
 
     // increase signing timestamp on any links that have signing
     for (uint8_t i=0; i<MAVLINK_COMM_NUM_BUFFERS; i++) {
-        mavlink_channel_t chan = (mavlink_channel_t)(MAVLINK_COMM_0 + i);
-        mavlink_status_t *status = mavlink_get_channel_status(chan);
+	mavlink_channel_t _chan = (mavlink_channel_t)(MAVLINK_COMM_0 + i);
+	mavlink_status_t *status = mavlink_get_channel_status(_chan);
         if (status && status->signing && status->signing->timestamp < signing_timestamp) {
             status->signing->timestamp = signing_timestamp;
         }
@@ -323,7 +323,7 @@ void MAVLink::save_signing_timestamp(void)
     if (db == nullptr) {
         return;
     }
-    if (!load_key(db, key_id)) {
+    if (!load_key(db)) {
         printf("Bad key %d\n", key_id);
         db_close_cancel(db);
         return;
@@ -331,8 +331,8 @@ void MAVLink::save_signing_timestamp(void)
     bool need_save = false;
 
     for (uint8_t i=0; i<MAVLINK_COMM_NUM_BUFFERS; i++) {
-        mavlink_channel_t chan = (mavlink_channel_t)(MAVLINK_COMM_0 + i);
-        const mavlink_status_t *status = mavlink_get_channel_status(chan);
+	mavlink_channel_t _chan = (mavlink_channel_t)(MAVLINK_COMM_0 + i);
+	const mavlink_status_t *status = mavlink_get_channel_status(_chan);
         if (status && status->signing && status->signing->timestamp > key.timestamp) {
             key.timestamp = status->signing->timestamp;
             need_save = true;
@@ -340,7 +340,7 @@ void MAVLink::save_signing_timestamp(void)
     }
     if (need_save) {
         // save updated key
-        save_key(db, key_id);
+	save_key(db);
 	db_close_commit(db);
     } else {
         db_close_cancel(db);
@@ -402,7 +402,7 @@ void MAVLink::handle_setup_signing(const mavlink_message_t &msg)
         return;
     }
 
-    if (!load_key(db, key_id)) {
+    if (!load_key(db)) {
         printf("Bad key %d\n", key_id);
         db_close_cancel(db);
         return;
@@ -412,9 +412,9 @@ void MAVLink::handle_setup_signing(const mavlink_message_t &msg)
     memcpy(key.secret_key, packet.secret_key, 32);
 
     ::printf("[%d] Set new signing key\n", key_id);
-    save_key(db, key_id);
+    save_key(db);
 
     got_signed_packet = false;
     db_close_commit(db);
-    load_signing_key(key_id);
+    load_signing_key();
 }
