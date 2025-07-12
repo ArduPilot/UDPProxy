@@ -30,10 +30,14 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/wait.h>
+#include <sys/epoll.h>
+
 #include "mavlink.h"
 #include "util.h"
 #include "keydb.h"
 #include "websocket.h"
+
+#define MAX_EPOLL_EVENTS 64
 
 struct listen_port {
     struct listen_port *next;
@@ -562,57 +566,84 @@ static void reload_ports(void)
  */
 static void wait_connection(void)
 {
-    double last_reload = time_seconds();
-    while (true) {
-        fd_set fds;
-        int ret;
-        struct timeval tval;
-	int fdmax = -1;
+    int epfd = epoll_create1(0);
+    if (epfd == -1) {
+        perror("epoll_create1");
+        exit(1);
+    }
 
-        FD_ZERO(&fds);
-        for (auto *p = ports; p; p=p->next) {
-            if (p->sock1_udp != -1 && p->sock2_udp != -1 && p->pid == 0) {
-                FD_SET(p->sock1_udp, &fds);
-                FD_SET(p->sock2_udp, &fds);
-                fdmax = MAX(fdmax, p->sock1_udp);
-                fdmax = MAX(fdmax, p->sock2_udp);
+    /*
+      rebuild epoll structure for current list of connections
+     */
+    auto rebuild_epoll_set = [&]() {
+        epoll_ctl(epfd, EPOLL_CTL_DEL, -1, nullptr); // dummy cleanup if needed
+        for (auto *p = ports; p; p = p->next) {
+            if (p->pid != 0) continue;
+
+            struct epoll_event ev = {};
+            ev.events = EPOLLIN;
+            ev.data.ptr = p;
+
+            if (p->sock1_udp != -1) {
+                ev.data.fd = p->sock1_udp;
+                epoll_ctl(epfd, EPOLL_CTL_ADD, p->sock1_udp, &ev);
             }
-	    if (p->sock1_tcp != -1 && p->sock2_listen != -1 && p->pid == 0) {
-		FD_SET(p->sock1_tcp, &fds);
-		FD_SET(p->sock2_listen, &fds);
-		fdmax = MAX(fdmax, p->sock1_tcp);
-		fdmax = MAX(fdmax, p->sock2_listen);
+            if (p->sock2_udp != -1) {
+                ev.data.fd = p->sock2_udp;
+                epoll_ctl(epfd, EPOLL_CTL_ADD, p->sock2_udp, &ev);
+            }
+            if (p->sock1_tcp != -1) {
+                ev.data.fd = p->sock1_tcp;
+                epoll_ctl(epfd, EPOLL_CTL_ADD, p->sock1_tcp, &ev);
+            }
+            if (p->sock2_listen != -1) {
+                ev.data.fd = p->sock2_listen;
+                epoll_ctl(epfd, EPOLL_CTL_ADD, p->sock2_listen, &ev);
             }
         }
-        tval.tv_sec = 1;
-        tval.tv_usec = 0;
+    };
 
-        ret = select(fdmax+1, &fds, NULL, NULL, &tval);
-        if (ret == -1 && errno == EINTR) continue;
-        if (ret <= 0) {
+    rebuild_epoll_set();
+
+    double last_reload = time_seconds();
+    struct epoll_event events[MAX_EPOLL_EVENTS];
+
+    while (true) {
+	int ret = epoll_wait(epfd, events, MAX_EPOLL_EVENTS, 1000); // 1 second timeout
+
+        if (ret == -1) {
+            if (errno == EINTR) continue;
+            perror("epoll_wait");
+            break;
+        }
+
+        if (ret == 0) {
             check_children();
-
             double now = time_seconds();
             if (now - last_reload > 5) {
                 last_reload = now;
                 reload_ports();
+                close(epfd);
+                epfd = epoll_create1(0);
+                rebuild_epoll_set();
             }
             continue;
         }
 
-        for (auto *p = ports; p; p=p->next) {
-            if (p->sock1_udp != -1 && p->sock2_udp != -1 && p->pid == 0) {
-                if (FD_ISSET(p->sock1_udp, &fds) || FD_ISSET(p->sock2_udp, &fds)) {
+        for (int i = 0; i < ret; i++) {
+            int fd = events[i].data.fd;
+
+            for (auto *p = ports; p; p = p->next) {
+                if (p->pid != 0) continue;
+                if ((p->sock1_udp == fd || p->sock2_udp == fd ||
+                     p->sock1_tcp == fd || p->sock2_listen == fd)) {
                     handle_connection(p);
-                }
-            }
-	    if (p->sock1_tcp != -1 && p->sock2_listen != -1 && p->pid == 0) {
-		if (FD_ISSET(p->sock1_tcp, &fds) || FD_ISSET(p->sock2_listen, &fds)) {
-                    handle_connection(p);
+                    break;
                 }
             }
         }
     }
+    close(epfd);
 }
 
 int main(int argc, char *argv[])
