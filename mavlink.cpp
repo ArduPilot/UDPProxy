@@ -29,7 +29,7 @@
 
 mavlink_system_t mavlink_system = {0, 0};
 
-bool MAVLink::got_bad_signature;
+bool MAVLink::got_bad_signature[MAVLINK_COMM_NUM_BUFFERS];
 
 // unused comm_send_buffer (as we handle packets as UDP buffers)
 void comm_send_buffer(mavlink_channel_t chan, const uint8_t *buf, uint8_t len)
@@ -53,6 +53,7 @@ void MAVLink::init(int _fd, mavlink_channel_t _chan, bool signing_required, bool
     last_compid = 0;
     bad_sig_count = 0;
     allow_websocket = _allow_websocket;
+    got_bad_signature[chan] = false;
 
     ZERO_STRUCT(signing_streams);
     ZERO_STRUCT(signing);
@@ -69,7 +70,7 @@ bool MAVLink::receive_message(uint8_t *&buf, ssize_t &len, mavlink_message_t &ms
 {
     mavlink_status_t status {};
     status.packet_rx_drop_count = 0;
-    got_bad_signature = false;
+    got_bad_signature[chan] = false;
     while (len--) {
 	if (mavlink_parse_char(chan, *buf++, &msg, &status)) {
 	    if (key_id != -1) {
@@ -86,7 +87,7 @@ bool MAVLink::receive_message(uint8_t *&buf, ssize_t &len, mavlink_message_t &ms
                         got_signed_packet = false;
                         return false;
                     }
-                    if (got_bad_signature) {
+		    if (got_bad_signature[chan]) {
                         if (periodic_warning()) {
                             switch (signing.last_status) {
                             case MAVLINK_SIGNING_STATUS_BAD_SIGNATURE:
@@ -199,7 +200,12 @@ bool MAVLink::send_message(const mavlink_message_t &msg)
 bool MAVLink::accept_unsigned_callback(const mavlink_status_t *status, uint32_t msgId)
 {
     // we accept all and use status to check in receive_message()
-    got_bad_signature = true;
+    if (status->signing) {
+	auto _chan = mavlink_channel_t(status->signing->link_id);
+	if (_chan < MAVLINK_COMM_NUM_BUFFERS) {
+	    got_bad_signature[_chan] = true;
+	}
+    }
     return true;
 }
 
@@ -352,11 +358,11 @@ void MAVLink::mav_printf(uint8_t severity, const char *fmt, ...)
     vsnprintf(text, sizeof(text), fmt, arg_list);
     va_end(arg_list);
     mavlink_message_t msg {};
-    // we use MAVLINK_COMM_2 as we don't want these messages signed,
+    // we use CHAN_STATUSTEXT as we don't want these messages signed,
     // as if we sign them and the signature doesn't match then
     // MissionPlanner doesn't display them
     mavlink_msg_statustext_pack_chan(last_sysid, last_compid,
-                                     MAVLINK_COMM_2,
+				     CHAN_STATUSTEXT,
                                      &msg,
                                      severity,
                                      text,

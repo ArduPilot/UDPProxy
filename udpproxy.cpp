@@ -39,7 +39,7 @@ struct listen_port {
     struct listen_port *next;
     int port1, port2;
     int sock1_udp, sock2_udp;
-    int sock1_tcp, sock2_tcp;
+    int sock1_tcp, sock2_listen;
     pid_t pid;
     WebSocket *ws;
 };
@@ -83,8 +83,9 @@ static void add_port(int port1, int port2)
     p->sock1_udp = -1;
     p->sock2_udp = -1;
     p->sock1_tcp = -1;
-    p->sock2_tcp = -1;
+    p->sock2_listen = -1;
     p->pid = 0;
+    p->ws = nullptr;
     ports = p;
     printf("Added port %d/%d\n", port1, port2);
     open_sockets(p);
@@ -115,21 +116,48 @@ static ssize_t ws_send(int sockfd, const void *buf, size_t len, int flags)
     return main_loop_port->ws->send(buf, len);
 }
 
+static void close_fd(int &fd)
+{
+    if (fd != -1) {
+	close(fd);
+	fd = -1;
+    }
+}
+
+class Connection2 {
+public:
+    int sock = -1;
+    bool active;
+    MAVLink mav;
+
+    void close(void) {
+	close_fd(sock);
+	active = false;
+    }
+};
 
 static void main_loop(struct listen_port *p)
 {
     unsigned char buf[10240];
     bool have_conn1=false;
-    bool have_conn2=false;
     double last_pkt1=0;
     double last_pkt2=0;
     uint32_t count1=0, count2=0;
     int fdmax = -1;
+    /*
+      we allow more than one TCP connection on the support engineer
+      side, but only one UDP connection
+     */
+    const uint8_t max_conn2_count = MAX_COMM2_LINKS;
+    uint8_t conn2_count = 0;
+    MAVLink mav_blank;
+    MAVLink mav1;
+    Connection2 conn2[max_conn2_count];
+
     fdmax = MAX(fdmax, p->sock1_udp);
     fdmax = MAX(fdmax, p->sock2_udp);
     fdmax = MAX(fdmax, p->sock1_tcp);
-    fdmax = MAX(fdmax, p->sock2_tcp);
-    MAVLink mav1, mav2;
+    fdmax = MAX(fdmax, p->sock2_listen);
 
     main_loop_port = p;
 
@@ -142,15 +170,28 @@ static void main_loop(struct listen_port *p)
         if (have_conn1 && now - last_pkt1 > 10) {
             break;
         }
-        if (have_conn2 && now - last_pkt2 > 10) {
+	if (conn2_count>0 && now - last_pkt2 > 10) {
             break;
         }
             
-        FD_ZERO(&fds);
-        FD_SET(p->sock1_udp, &fds);
-        FD_SET(p->sock2_udp, &fds);
-	FD_SET(p->sock1_tcp, &fds);
-	FD_SET(p->sock2_tcp, &fds);
+	FD_ZERO(&fds);
+	if (p->sock1_udp != -1) {
+	    FD_SET(p->sock1_udp, &fds);
+	}
+	if (p->sock2_udp != -1) {
+	    FD_SET(p->sock2_udp, &fds);
+	}
+	if (p->sock1_tcp != -1) {
+	    FD_SET(p->sock1_tcp, &fds);
+	}
+	if (p->sock2_listen != -1) {
+	    FD_SET(p->sock2_listen, &fds);
+	}
+	for (const auto &c2 : conn2) {
+	    if (c2.sock != -1) {
+		FD_SET(c2.sock, &fds);
+	    }
+	}
 
         tval.tv_sec = 10;
         tval.tv_usec = 0;
@@ -161,8 +202,10 @@ static void main_loop(struct listen_port *p)
 
         now = time_seconds();
 
-        if (FD_ISSET(p->sock1_udp, &fds)) {
-            struct sockaddr_in from;
+	if (p->sock1_udp != -1 &&
+	    FD_ISSET(p->sock1_udp, &fds)) {
+	    close_fd(p->sock1_tcp);
+	    struct sockaddr_in from;
             socklen_t fromlen = sizeof(from);
 	    ssize_t n = recvfrom(p->sock1_udp, buf, sizeof(buf), 0,
                              (struct sockaddr *)&from, &fromlen);
@@ -173,47 +216,50 @@ static void main_loop(struct listen_port *p)
                 if (connect(p->sock1_udp, (struct sockaddr *)&from, fromlen) != 0) {
                     break;
                 }
-		mav1.init(p->sock1_udp, MAVLINK_COMM_0, false, false);
+		mav1.init(p->sock1_udp, CHAN_COMM1, false, false);
                 have_conn1 = true;
-                printf("[%d] %s have conn1 for from %s\n", unsigned(p->port2), time_string(), addr_to_str(from));
+		printf("[%d] %s have UDP conn1 for from %s\n", unsigned(p->port2), time_string(), addr_to_str(from));
             }
             mavlink_message_t msg {};
-	    if (have_conn2) {
+	    if (conn2_count > 0) {
 		uint8_t *buf0 = buf;
-		bool failed = false;
 		while (n > 0 && mav1.receive_message(buf0, n, msg)) {
-		    if (!mav2.send_message(msg)) {
-			failed = true;
-			break;
+		    for (auto &c2 : conn2) {
+			if (c2.sock != -1 && !c2.mav.send_message(msg)) {
+			    c2.close();
+			    conn2_count--;
+			}
 		    }
 		}
-		if (failed) {
+		if (conn2_count == 0) {
 		    break;
 		}
             }
         }
 
-        if (FD_ISSET(p->sock2_udp, &fds)) {
-            struct sockaddr_in from;
+	if (p->sock2_udp != -1 &&
+	    FD_ISSET(p->sock2_udp, &fds)) {
+	    close_fd(p->sock2_listen);
+	    struct sockaddr_in from;
             socklen_t fromlen = sizeof(from);
 	    ssize_t n = recvfrom(p->sock2_udp, buf, sizeof(buf), 0,
                              (struct sockaddr *)&from, &fromlen);
             if (n <= 0) break;
             last_pkt2 = now;
-            count2++;
-            if (!have_conn2) {
+	    count2++;
+	    if (conn2_count == 0) {
                 if (connect(p->sock2_udp, (struct sockaddr *)&from, fromlen) != 0) {
                     break;
-                }
-		mav2.init(p->sock2_udp, MAVLINK_COMM_1, true, false, p->port2);
-                have_conn2 = true;
-                printf("[%u] %s have conn2 from %s\n", unsigned(p->port2), time_string(), addr_to_str(from));
+		}
+		conn2[0].mav.init(p->sock2_udp, CHAN_COMM2(0), true, false, p->port2);
+		conn2_count++;
+		printf("[%u] %s have UDP conn2 from %s\n", unsigned(p->port2), time_string(), addr_to_str(from));
             }
             mavlink_message_t msg {};
 	    if (have_conn1) {
 		uint8_t *buf0 = buf;
 		bool failed = false;
-		while (n > 0 && mav2.receive_message(buf0, n, msg)) {
+		while (n > 0 && conn2[0].mav.receive_message(buf0, n, msg)) {
 		    if (!mav1.send_message(msg)) {
 			failed = true;
 			break;
@@ -225,24 +271,30 @@ static void main_loop(struct listen_port *p)
             }
 	}
 
-	if (FD_ISSET(p->sock1_tcp, &fds)) {
+	if (!have_conn1 &&
+	    p->sock1_tcp != -1 &&
+	    FD_ISSET(p->sock1_tcp, &fds)) {
+	    close_fd(p->sock1_udp);
 	    struct sockaddr_in from;
 	    socklen_t fromlen = sizeof(from);
-	    if (!have_conn1) {
-		int fd2 = accept(p->sock1_tcp, (struct sockaddr *)&from, &fromlen);
-		if (fd2 < 0) {
-		    break;
-		}
-		set_tcp_options(fd2);
-		close(p->sock1_tcp);
-		p->sock1_tcp = fd2;
-		fdmax = MAX(fdmax, p->sock1_tcp);
-		have_conn1 = true;
-		printf("[%d] %s have TCP conn1 for from %s\n", unsigned(p->port2), time_string(), addr_to_str(from));
-		mav1.init(p->sock1_tcp, MAVLINK_COMM_0, false, false);
-		last_pkt1 = now;
-		continue;
+	    int fd2 = accept(p->sock1_tcp, (struct sockaddr *)&from, &fromlen);
+	    if (fd2 < 0) {
+		break;
 	    }
+	    set_tcp_options(fd2);
+	    close(p->sock1_tcp);
+	    p->sock1_tcp = fd2;
+	    fdmax = MAX(fdmax, p->sock1_tcp);
+	    have_conn1 = true;
+	    printf("[%d] %s have TCP conn1 for from %s\n", unsigned(p->port2), time_string(), addr_to_str(from));
+	    mav1.init(p->sock1_tcp, CHAN_COMM1, false, false);
+	    last_pkt1 = now;
+	    continue;
+	}
+
+	if (p->sock1_tcp != -1 &&
+	    FD_ISSET(p->sock1_tcp, &fds)) {
+	    close_fd(p->sock1_udp);
 	    ssize_t n = recv(p->sock1_tcp, buf, sizeof(buf), 0);
 	    if (n <= 0) {
 		printf("[%d] %s EOF TCP conn1\n", unsigned(p->port2), time_string());
@@ -251,94 +303,134 @@ static void main_loop(struct listen_port *p)
 	    last_pkt1 = now;
             count1++;
 	    mavlink_message_t msg {};
-	    if (have_conn2) {
+	    if (conn2_count > 0) {
 		uint8_t *buf0 = buf;
-		bool failed = false;
 		while (n > 0 && mav1.receive_message(buf0, n, msg)) {
-		    if (!mav2.send_message(msg)) {
-			failed = true;
-			break;
+		    for (auto &c2 : conn2) {
+			if (c2.sock != -1 && !c2.mav.send_message(msg)) {
+			    c2.close();
+			    conn2_count--;
+			}
 		    }
 		}
-		if (failed) {
+		if (conn2_count == 0) {
 		    break;
 		}
             }
 	}
 
-	if (FD_ISSET(p->sock2_tcp, &fds)) {
+	/*
+	  check for new TCP conn2 connection
+	 */
+	if (p->sock2_listen != -1 &&
+	    FD_ISSET(p->sock2_listen, &fds)) {
+	    close_fd(p->sock2_udp);
 	    struct sockaddr_in from;
 	    socklen_t fromlen = sizeof(from);
-	    if (!have_conn2) {
-		int fd2 = accept(p->sock2_tcp, (struct sockaddr *)&from, &fromlen);
-		if (fd2 < 0) {
-		    break;
-		}
-		set_tcp_options(fd2);
-		close(p->sock2_tcp);
-		p->sock2_tcp = fd2;
-		fdmax = MAX(fdmax, p->sock2_tcp);
-		have_conn2 = true;
-		printf("[%d] %s have TCP conn2 for from %s\n", unsigned(p->port2), time_string(), addr_to_str(from));
-		mav2.init(p->sock2_tcp, MAVLINK_COMM_1, true, true, p->port2);
-		last_pkt2 = now;
+	    int fd2 = accept(p->sock2_listen, (struct sockaddr *)&from, &fromlen);
+	    if (fd2 < 0) {
 		continue;
 	    }
-	    ssize_t n = recv(p->sock2_tcp, buf, sizeof(buf)-1, 0);
-	    if (n <= 0) {
-		printf("[%d] %s EOF TCP conn2\n", unsigned(p->port2), time_string());
-		break;
+	    if (conn2_count >= max_conn2_count) {
+		// printf("[%d] %s too many TCP connections: max %u\n", unsigned(p->port2), time_string(), unsigned(max_conn2_count));
+		close(fd2);
+		continue;
 	    }
-	    buf[n] = 0;
-	    if (count2 == 0 &&
-		strncmp((const char *)buf, "GET / HTTP/1.1", 14) == 0 &&
-		strcasestr((const char *)buf, "\r\nUpgrade: websocket\r\n")) {
-		p->ws = new WebSocket(p->sock2_tcp, (const char *)buf);
-		if (p->ws == nullptr) {
-		    break;
-		}
-		mav2.set_send(&ws_send);
-		printf("[%d] %s WebSocket conn2\n", unsigned(p->port2), time_string());
-	    }
-	    if (p->ws) {
-		n = p->ws->decode(buf, n);
-		if (n <= 0) {
-		    printf("[%d] %s WebSocket EOF TCP conn2\n", unsigned(p->port2), time_string());
+
+	    set_tcp_options(fd2);
+
+	    uint8_t i;
+	    for (i=0; i<max_conn2_count; i++) {
+		if (conn2[i].sock == -1) {
 		    break;
 		}
 	    }
+	    if (i == max_conn2_count) {
+		printf("[%d] %s too many TCP connections BUG: max %u\n", unsigned(p->port2), time_string(), unsigned(max_conn2_count));
+		close(fd2);
+		continue;
+	    }
+	    auto &c2 = conn2[i];
+	    c2.sock = fd2;
+	    c2.active = false;
+	    fdmax = MAX(fdmax, c2.sock);
+	    printf("[%d] %s have TCP conn2[%u] for from %s\n", unsigned(p->port2), time_string(), unsigned(i+1), addr_to_str(from));
+	    c2.mav.init(c2.sock, CHAN_COMM2(i), true, true, p->port2);
 	    last_pkt2 = now;
-	    count2++;
-	    mavlink_message_t msg {};
-	    if (have_conn1) {
-		uint8_t *buf0 = buf;
-		bool failed = false;
-		while (n > 0 && mav2.receive_message(buf0, n, msg)) {
-		    if (!mav1.send_message(msg)) {
-			failed = true;
+	    conn2_count++;
+	    continue;
+	}
+
+	for (uint8_t i=0; i<max_conn2_count; i++) {
+	    auto &c2 = conn2[i];
+	    if (c2.sock == -1) {
+		continue;
+	    }
+	    if (FD_ISSET(c2.sock, &fds)) {
+		close_fd(p->sock2_udp);
+		ssize_t n = recv(c2.sock, buf, sizeof(buf)-1, 0);
+		if (n <= 0) {
+		    printf("[%d] %s EOF TCP conn2[%u]\n", unsigned(p->port2), time_string(), unsigned(i+1));
+		    c2.close();
+		    conn2_count--;
+		    if (conn2_count == 0) {
+			goto all_closed;
+		    }
+		    continue;
+		}
+		buf[n] = 0;
+		if (!c2.active &&
+		    strncmp((const char *)buf, "GET / HTTP/1.1", 14) == 0 &&
+		    strcasestr((const char *)buf, "\r\nUpgrade: websocket\r\n")) {
+		    p->ws = new WebSocket(c2.sock, (const char *)buf);
+		    if (p->ws == nullptr) {
+			break;
+		    }
+		    c2.mav.set_send(&ws_send);
+		    printf("[%d] %s WebSocket conn2\n", unsigned(p->port2), time_string());
+		}
+		if (p->ws) {
+		    n = p->ws->decode(buf, n);
+		    if (n <= 0) {
+			printf("[%d] %s WebSocket EOF TCP conn2\n", unsigned(p->port2), time_string());
 			break;
 		    }
 		}
-		if (failed) {
-		    break;
+		last_pkt2 = now;
+		count2++;
+		c2.active = true;
+		mavlink_message_t msg {};
+		if (have_conn1) {
+		    uint8_t *buf0 = buf;
+		    bool failed = false;
+		    while (n > 0 && c2.mav.receive_message(buf0, n, msg)) {
+			if (!mav1.send_message(msg)) {
+			    failed = true;
+			    break;
+			}
+		    }
+		    if (failed) {
+			break;
+		    }
 		}
-            }
+	    }
 	}
     }
 
+all_closed:
     if (count1 != 0 || count2 != 0) {
         printf("[%d] %s Closed connection count1=%u count2=%u\n",
                p->port2,
                time_string(),
                unsigned(count1),
-               unsigned(count2));
+	       unsigned(count2));
         // update database
         auto *db = db_open_transaction();
         if (db != nullptr) {
             struct KeyEntry ke;
             if (db_load_key(db, p->port2, ke)) {
                 ke.count1 += count1;
-                ke.count2 += count2;
+		ke.count2 += count2;
                 ke.connections++;
                 db_save_key(db, p->port2, ke);
                 db_close_commit(db);
@@ -365,7 +457,7 @@ static void close_sockets(struct listen_port *p)
     close_socket(&p->sock1_udp);
     close_socket(&p->sock2_udp);
     close_socket(&p->sock1_tcp);
-    close_socket(&p->sock2_tcp);
+    close_socket(&p->sock2_listen);
 }
 
 /*
@@ -391,9 +483,9 @@ static void open_sockets(struct listen_port *p)
 	    printf("[%d] Failed to open TCP port %d - %s\n", p->port2, p->port1, strerror(errno));
 	}
     }
-    if (p->sock2_tcp == -1) {
-	p->sock2_tcp = open_socket_in_tcp(p->port2);
-	if (p->sock2_tcp == -1) {
+    if (p->sock2_listen == -1) {
+	p->sock2_listen = open_socket_in_tcp(p->port2);
+	if (p->sock2_listen == -1) {
 	    printf("[%d] Failed to open TCP port %d - %s\n", p->port2, p->port2, strerror(errno));
 	}
     }
@@ -485,11 +577,11 @@ static void wait_connection(void)
                 fdmax = MAX(fdmax, p->sock1_udp);
                 fdmax = MAX(fdmax, p->sock2_udp);
             }
-	    if (p->sock1_tcp != -1 && p->sock2_tcp != -1 && p->pid == 0) {
+	    if (p->sock1_tcp != -1 && p->sock2_listen != -1 && p->pid == 0) {
 		FD_SET(p->sock1_tcp, &fds);
-		FD_SET(p->sock2_tcp, &fds);
+		FD_SET(p->sock2_listen, &fds);
 		fdmax = MAX(fdmax, p->sock1_tcp);
-		fdmax = MAX(fdmax, p->sock2_tcp);
+		fdmax = MAX(fdmax, p->sock2_listen);
             }
         }
         tval.tv_sec = 1;
@@ -514,8 +606,8 @@ static void wait_connection(void)
                     handle_connection(p);
                 }
             }
-	    if (p->sock1_tcp != -1 && p->sock2_tcp != -1 && p->pid == 0) {
-		if (FD_ISSET(p->sock1_tcp, &fds) || FD_ISSET(p->sock2_tcp, &fds)) {
+	    if (p->sock1_tcp != -1 && p->sock2_listen != -1 && p->pid == 0) {
+		if (FD_ISSET(p->sock1_tcp, &fds) || FD_ISSET(p->sock2_listen, &fds)) {
                     handle_connection(p);
                 }
             }

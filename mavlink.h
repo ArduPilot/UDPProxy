@@ -27,7 +27,7 @@ private:
     int key_id;
     bool key_loaded = false;
     bool got_signed_packet = false;
-    static bool got_bad_signature;
+    static bool got_bad_signature[MAVLINK_COMM_NUM_BUFFERS];
     bool allow_websocket;
 
     mavlink_signing_streams_t signing_streams {};
