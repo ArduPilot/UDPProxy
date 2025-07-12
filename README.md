@@ -12,6 +12,7 @@ For more information on using the support proxy see https://support.ardupilot.or
 - Uses normal UDP/TCP forwarding in users GCS
 - Supports both TCP and UDP, including mixed connections
 - Supports WebSocket TCP connections on support engineer side
+- supports up to 8 simultaneous connections on TCP by support engineer
 
 ## How It Works
 
