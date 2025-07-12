@@ -2,9 +2,9 @@
 
 # Compiler settings
 CXX ?= g++
-CC ?= gcc
-CFLAGS := -Wall -g -DSTANDALONE
-CXXFLAGS := -Wall -g -Werror
+CXXFLAGS := -Wall -g -Werror -Wextra -Werror=format -Wpointer-arith -Wcast-align -Wno-missing-field-initializers -Wno-unused-parameter -Wno-redundant-decls
+CXXFLAGS := $(CXXFLAGS) -Wno-unknown-pragmas -Wno-trigraphs -Werror=shadow -Werror=return-type -Werror=unused-result -Werror=unused-variable -Werror=narrowing
+CXXFLAGS := $(CXXFLAGS) -Werror=attributes -Werror=overflow -Werror=parentheses -Werror=format-extra-args -Werror=ignored-qualifiers -Werror=undef
 
 # Library settings
 LIBS := -ltdb -lssl -lcrypto

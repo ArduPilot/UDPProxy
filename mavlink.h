@@ -45,11 +45,11 @@ private:
     // count of signature errors for triggering message
     uint32_t bad_sig_count = 0;
 
-    void load_signing_key(int key_id);
+    void load_signing_key(void);
     void update_signing_timestamp(void);
     void save_signing_timestamp(void);
-    bool load_key(TDB_CONTEXT *db, int key_id);
-    bool save_key(TDB_CONTEXT *db, int key_id);
+    bool load_key(TDB_CONTEXT *db);
+    bool save_key(TDB_CONTEXT *db);
 
     bool periodic_warning(void);
     void mav_printf(uint8_t severity, const char *fmt, ...);
