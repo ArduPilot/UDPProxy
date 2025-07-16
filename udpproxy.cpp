@@ -234,6 +234,9 @@ static void main_loop(struct listen_port *p)
 			    conn2_count--;
 			}
 		    }
+		    if (p->sock2_udp != -1) {
+			conn2[0].mav.send_message(msg);
+		    }
 		}
 		if (conn2_count == 0) {
 		    break;
