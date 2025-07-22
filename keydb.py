@@ -3,12 +3,14 @@
 UDPProxy key database management
 '''
 
+import argparse
 import tdb
 import os
 import sys
 import struct
 
 KEY_MAGIC = 0x6b73e867a72cdd1f
+
 
 class KeyEntry:
     expected_length = 96
@@ -22,10 +24,10 @@ class KeyEntry:
         self.count1 = 0
         self.count2 = 0
         self.name = ''
-        self.port2 = port2 # comes from database key
+        self.port2 = port2  # comes from database key
 
     def pack(self):
-        name = self.name.encode('UTF-8').ljust(32,bytearray(1))
+        name = self.name.encode('UTF-8').ljust(32, bytearray(1))
         ret = struct.pack("<QQ32siIII32s",
                           self.magic, self.timestamp, self.secret_key, self.port1,
                           self.connections, self.count1, self.count2,
@@ -36,7 +38,8 @@ class KeyEntry:
     def unpack(self, data):
         assert len(data) == self.expected_length
         self.magic, self.timestamp, self.secret_key, self.port1, \
-        self.connections, self.count1, self.count2, name = struct.unpack("<QQ32siIII32s", data)
+            self.connections, self.count1, self.count2, name = struct.unpack(
+                "<QQ32siIII32s", data)
         self.name = name.decode('utf-8', errors='ignore')
 
     def store(self, db):
@@ -46,7 +49,7 @@ class KeyEntry:
     def remove(self, db):
         key = struct.pack('<i', self.port2)
         db.delete(key)
-        
+
     def fetch(self, db):
         key = struct.pack('<i', self.port2)
         v = db.get(key)
@@ -66,6 +69,7 @@ class KeyEntry:
 
     def __str__(self):
         return "%u/%u '%s' counts=%u/%u connections=%u" % (self.port1, self.port2, self.name.rstrip('\0'), self.count1, self.count2, self.connections)
+
 
 def get_port_sets(db):
     '''get sets of port1/port2'''
@@ -92,6 +96,7 @@ def sys_exit(code):
     '''exit with failure code'''
     db.transaction_cancel()
     sys.exit(code)
+
 
 def convert_db(db):
     '''convert from old format'''
@@ -125,6 +130,7 @@ def list_db(db):
         ke.unpack(db.get(k))
         print("%s" % ke)
 
+
 def set_name(db, args):
     '''set name for a db entry'''
     if len(args) != 2:
@@ -139,6 +145,7 @@ def set_name(db, args):
     ke.name = name
     ke.store(db)
     print("Set name for %s" % ke)
+
 
 def add_entry(db, args):
     '''add a new entry'''
@@ -170,6 +177,7 @@ def add_entry(db, args):
     ke.store(db)
     print("Added %s" % ke)
 
+
 def remove_entry(db, args):
     '''remove an entry'''
     if len(args) != 1:
@@ -184,7 +192,8 @@ def remove_entry(db, args):
 
     ke.remove(db)
     print("Removed %s" % ke)
-    
+
+
 def set_pass(db, args):
     '''set passphrase'''
     if len(args) != 2:
@@ -201,6 +210,7 @@ def set_pass(db, args):
     ke.store(db)
     print("Set passphase for %s" % ke)
 
+
 def set_port1(db, args):
     '''set port1'''
     if len(args) != 2:
@@ -216,24 +226,28 @@ def set_port1(db, args):
     ke.port1 = port1
     ke.store(db)
     print("Set port1 for %s" % ke)
-    
-import argparse
+
+
 parser = argparse.ArgumentParser(description=__doc__)
 
-parser.add_argument("--keydb", default="keys.tdb", help="key database tdb filename")
+parser.add_argument("--keydb", default="keys.tdb",
+                    help="key database tdb filename")
 parser.add_argument("action", default=None,
-                    choices=['list', 'convert', 'add', 'remove', 'setname', 'setpass', 'setport1', 'initialise'],
+                    choices=['list', 'convert', 'add', 'remove',
+                             'setname', 'setpass', 'setport1', 'initialise'],
                     help="action to perform")
 parser.add_argument("args", default=[], nargs=argparse.REMAINDER)
 args = parser.parse_args()
 
 if args.action == "initialise":
-    db = tdb.open('keys.tdb', hash_size=1024, tdb_flags=0, flags=os.O_RDWR|os.O_CREAT, mode=0o600)
+    db = tdb.open('keys.tdb', hash_size=1024, tdb_flags=0,
+                  flags=os.O_RDWR | os.O_CREAT, mode=0o600)
     print("Database keys.tdb initialised")
     sys.exit(0)
 
 try:
-    db = tdb.open('keys.tdb', hash_size=1024, tdb_flags=0, flags=os.O_RDWR, mode=0o600)
+    db = tdb.open('keys.tdb', hash_size=1024, tdb_flags=0,
+                  flags=os.O_RDWR, mode=0o600)
 except FileNotFoundError:
     print("keys.tdb not found, you need to use 'keydb.py initialise' to initialise the database")
     sys.exit(1)

@@ -25,8 +25,9 @@ WORKDIR /app
 # Copy source code (from parent directory)
 COPY . .
 
-# Create virtual environment and install pymavlink
-RUN python3 -m venv venv && \
+# Create virtual environment with system site packages and install pymavlink
+# --system-site-packages allows access to system python3-tdb package
+RUN python3 -m venv --system-site-packages venv && \
     . venv/bin/activate && \
     pip install --no-cache-dir pymavlink
 
