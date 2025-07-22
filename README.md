@@ -42,7 +42,7 @@ It's recommended to use a Python virtual environment to install pymavlink:
 
 ```bash
 # Create a virtual environment
-python3 -m venv venv
+python3 -m venv --system-site-packages venv
 
 # Activate the virtual environment
 source venv/bin/activate
@@ -308,10 +308,26 @@ ls -la keys.tdb
 journalctl -f | grep udpproxy
 ```
 
+## Testing
+
+### Automated CI Testing
+
+UDPProxy includes comprehensive CI testing to validate UDP and TCP connection functionality:
+
+```bash
+# Run all tests locally
+./run_tests.sh
+
+# Run specific test suites
+source venv/bin/activate
+pytest tests/test_connections.py -v
+pytest tests/test_authentication.py -v
+```
+
 ## Contributing
 
 1. **Code Style**: Follow existing C++ and Python conventions
-2. **Testing**: Test changes with both TCP and UDP connections
+2. **Testing**: Run the test suite before submitting changes
 3. **Documentation**: Update README for new features
 4. **Compatibility**: Ensure changes work with existing databases
 

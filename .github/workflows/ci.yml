@@ -1,0 +1,108 @@
+name: CI Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          gcc \
+          g++ \
+          make \
+          libtdb-dev \
+          libssl-dev \
+          libcrypto++-dev \
+          pkg-config \
+          python3-tdb
+
+    - name: Setup Python virtual environment
+      run: |
+        python -m venv --system-site-packages venv
+        source venv/bin/activate
+        pip install --upgrade pip
+        pip install pytest pymavlink
+
+    - name: Initialize submodules
+      run: |
+        git submodule update --init --recursive
+
+    - name: Build UDPProxy
+      run: |
+        make clean
+        make all
+
+    - name: Setup test database
+      run: |
+        source venv/bin/activate
+        python keydb.py initialise
+
+    - name: Run Connection Tests
+      run: |
+        source venv/bin/activate
+        pytest tests/test_connections.py -v -s
+
+    - name: Run Authentication Tests
+      run: |
+        source venv/bin/activate
+        pytest tests/test_authentication.py -v -s
+
+  docker-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
+
+    - name: Initialize submodules
+      run: |
+        git submodule update --init --recursive
+
+    - name: Build Docker image
+      run: |
+        docker build -t udpproxy-test -f docker/Dockerfile .
+
+    - name: Test Docker container
+      run: |
+        # Test that the binary exists and is executable
+        docker run --rm udpproxy-test /bin/bash -c "ls -la /app/udpproxy && file /app/udpproxy"
+
+        # Test database initialization in container
+        docker run --rm udpproxy-test /bin/bash -c "
+          cd /app &&
+          python3 keydb.py initialise &&
+          echo 'Docker database initialization successful'
+        "
+
+        # Test that the container can start and udpproxy runs
+        docker run --rm udpproxy-test /bin/bash -c "
+          cd /app &&
+          python3 keydb.py initialise &&
+          echo 'Starting UDPProxy in container...' &&
+          ./udpproxy &
+          sleep 2 &&
+          if pgrep udpproxy > /dev/null; then
+            echo 'UDPProxy is running successfully in container'
+            pkill udpproxy
+          else
+            echo 'UDPProxy failed to start in container'
+            exit 1
+          fi
+        "

@@ -6,3 +6,16 @@ libraries/
 venv/
 __pycache__/
 *.pyc
+
+# Test artifacts
+tests/__pycache__/
+tests/*.pyc
+.pytest_cache/
+test_*.log
+*.test
+.coverage
+htmlcov/
+
+# CI artifacts
+.github/workflows/*.log
+ci_test_output/
