@@ -62,8 +62,17 @@ void MAVLink::init(int _fd, mavlink_channel_t _chan, bool signing_required, bool
 	load_signing_key();
         update_signing_timestamp();
     }
+}
 
-    send_fn = send;
+/*
+  send bytes on the link
+ */
+ssize_t MAVLink::send_data(const void *buf, ssize_t len)
+{
+    if (ws) {
+	return ws->send(buf, len);
+    }
+    return ::send(fd, buf, len, 0);
 }
 
 bool MAVLink::receive_message(uint8_t *&buf, ssize_t &len, mavlink_message_t &msg)
@@ -74,7 +83,7 @@ bool MAVLink::receive_message(uint8_t *&buf, ssize_t &len, mavlink_message_t &ms
     while (len--) {
 	if (mavlink_parse_char(chan, *buf++, &msg, &status)) {
 	    if (key_id != -1) {
-                if (!key_loaded) {
+		if (!key_loaded) {
                     if (periodic_warning()) {
                         mav_printf(MAV_SEVERITY_CRITICAL, "Need to setup support signing key");
                     }
@@ -88,7 +97,7 @@ bool MAVLink::receive_message(uint8_t *&buf, ssize_t &len, mavlink_message_t &ms
                         return false;
                     }
 		    if (got_bad_signature[chan]) {
-                        if (periodic_warning()) {
+			if (periodic_warning()) {
                             switch (signing.last_status) {
                             case MAVLINK_SIGNING_STATUS_BAD_SIGNATURE:
                             default:
@@ -158,13 +167,7 @@ bool MAVLink::send_message(const mavlink_message_t &msg)
             // remember sysid/compid for STATUSTEXT
             last_sysid = msg.sysid;
             last_compid = msg.compid;
-            if (!got_signed_packet) {
-                uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
-                if (len > 0) {
-		    send_fn(fd, buf, len, 0);
-                }
-            }
-        }
+	}
         if (key_loaded) {
             update_signing_timestamp();
         }
@@ -189,7 +192,7 @@ bool MAVLink::send_message(const mavlink_message_t &msg)
 
     uint16_t len = mavlink_msg_to_send_buffer(buf, &msg2);
     if (len > 0) {
-	return send_fn(fd, buf, len, 0) == len;
+	return send_data(buf, len) == len;
     }
     return false;
 }
@@ -371,7 +374,7 @@ void MAVLink::mav_printf(uint8_t severity, const char *fmt, ...)
     uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
     if (len > 0) {
         ::printf("[%d]: %s\n", key_id, text);
-	send_fn(fd, buf, len, 0);
+	send_data(buf, len);
     }
 }
 

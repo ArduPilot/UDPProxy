@@ -5,6 +5,7 @@
 
 #include "mavlink_msgs.h"
 #include "keydb.h"
+#include "websocket.h"
 
 typedef ssize_t (*send_fn_t)(int, const void *, size_t , int);
 
@@ -16,8 +17,8 @@ public:
     void init(int fd, mavlink_channel_t chan, bool signing_required, bool allow_websocket, int key_id=-1);
     bool receive_message(uint8_t *&buf, ssize_t &len, mavlink_message_t &msg);
     bool send_message(const mavlink_message_t &msg);
-    void set_send(send_fn_t _fn) {
-	send_fn = _fn;
+    void set_ws(WebSocket *_ws) {
+	ws = _ws;
     }
 
 private:
@@ -56,5 +57,7 @@ private:
     static bool accept_unsigned_callback(const mavlink_status_t *status, uint32_t msgId);
     void handle_setup_signing(const mavlink_message_t &msg);
 
-    send_fn_t send_fn;
+    ssize_t send_data(const void *buf, ssize_t len);
+
+    WebSocket *ws;
 };
