@@ -45,7 +45,6 @@ struct listen_port {
     int sock1_udp, sock2_udp;
     int sock1_tcp, sock2_listen;
     pid_t pid;
-    WebSocket *ws;
 };
 
 static struct listen_port *ports;
@@ -89,7 +88,6 @@ static void add_port(int port1, int port2)
     p->sock1_tcp = -1;
     p->sock2_listen = -1;
     p->pid = 0;
-    p->ws = nullptr;
     ports = p;
     printf("Added port %d/%d\n", port1, port2);
     open_sockets(p);
@@ -110,16 +108,6 @@ static int handle_record(struct tdb_context *db, TDB_DATA key, TDB_DATA data, vo
     return 0;
 }
 
-struct listen_port *main_loop_port;
-
-/*
-  send on a websocket
- */
-static ssize_t ws_send(int sockfd, const void *buf, size_t len, int flags)
-{
-    return main_loop_port->ws->send(buf, len);
-}
-
 static void close_fd(int &fd)
 {
     if (fd != -1) {
@@ -131,8 +119,9 @@ static void close_fd(int &fd)
 class Connection2 {
 public:
     int sock = -1;
-    bool active;
+    bool active = false;
     MAVLink mav;
+    WebSocket *ws = nullptr;
 
     void close(void) {
 	close_fd(sock);
@@ -162,8 +151,6 @@ static void main_loop(struct listen_port *p)
     fdmax = MAX(fdmax, p->sock2_udp);
     fdmax = MAX(fdmax, p->sock1_tcp);
     fdmax = MAX(fdmax, p->sock2_listen);
-
-    main_loop_port = p;
 
     while (1) {
         fd_set fds;
@@ -375,7 +362,20 @@ static void main_loop(struct listen_port *p)
 	    }
 	    if (FD_ISSET(c2.sock, &fds)) {
 		close_fd(p->sock2_udp);
-		ssize_t n = recv(c2.sock, buf, sizeof(buf)-1, 0);
+		if (!c2.active && WebSocket::detect(c2.sock)) {
+		    c2.ws = new WebSocket(c2.sock);
+		    if (c2.ws == nullptr) {
+			break;
+		    }
+		    c2.mav.set_ws(c2.ws);
+		    printf("[%d] %s WebSocket%s conn2\n", unsigned(p->port2), time_string(), c2.ws->is_SSL()?" SSL":"");
+		}
+		ssize_t n;
+		if (c2.ws) {
+		    n = c2.ws->recv(buf, sizeof(buf)-1);
+		} else {
+		    n = recv(c2.sock, buf, sizeof(buf)-1, 0);
+		}
 		if (n <= 0) {
 		    printf("[%d] %s EOF TCP conn2[%u]\n", unsigned(p->port2), time_string(), unsigned(i+1));
 		    c2.close();
@@ -386,23 +386,6 @@ static void main_loop(struct listen_port *p)
 		    continue;
 		}
 		buf[n] = 0;
-		if (!c2.active &&
-		    strncmp((const char *)buf, "GET / HTTP/1.1", 14) == 0 &&
-		    strcasestr((const char *)buf, "\r\nUpgrade: websocket\r\n")) {
-		    p->ws = new WebSocket(c2.sock, (const char *)buf);
-		    if (p->ws == nullptr) {
-			break;
-		    }
-		    c2.mav.set_send(&ws_send);
-		    printf("[%d] %s WebSocket conn2\n", unsigned(p->port2), time_string());
-		}
-		if (p->ws) {
-		    n = p->ws->decode(buf, n);
-		    if (n <= 0) {
-			printf("[%d] %s WebSocket EOF TCP conn2\n", unsigned(p->port2), time_string());
-			break;
-		    }
-		}
 		last_pkt2 = now;
 		count2++;
 		c2.active = true;

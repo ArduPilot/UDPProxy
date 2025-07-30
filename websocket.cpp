@@ -12,14 +12,88 @@
 #include <openssl/bio.h>
 #include <openssl/buffer.h>
 #include <openssl/evp.h>
+#include <openssl/err.h>
 
-WebSocket::WebSocket(int _fd, const char *buf)
+#ifndef SSL_CERT_DIR
+#define SSL_CERT_DIR "./"
+#endif
+
+/*
+  see if this could be a WebSocket connection by looking at the first
+  packet
+ */
+bool WebSocket::detect(int fd)
+{
+    uint8_t peekbuf[14] {};
+
+    const ssize_t peekn = ::recv(fd, peekbuf, sizeof(peekbuf), MSG_PEEK);
+    if (peekn >= ssize_t(sizeof(wss_prefix)) && memcmp(wss_prefix, peekbuf, sizeof(wss_prefix)) == 0) {
+	// SSL connection
+	return true;
+    }
+    if (peekn >= ssize_t(sizeof(ws_prefix)) &&
+	strncmp(ws_prefix, (const char *)peekbuf, strlen(ws_prefix)) == 0) {
+	return true;
+    }
+    return false;
+}
+
+/*
+  constructor
+ */
+WebSocket::WebSocket(int _fd)
 {
     fd = _fd;
-    auto len = strlen(buf);
+    uint8_t peekbuf[14] {};
+
+    const ssize_t peekn = ::recv(fd, peekbuf, sizeof(peekbuf), MSG_PEEK);
+    if (peekn >= ssize_t(sizeof(wss_prefix)) && memcmp(wss_prefix, peekbuf, sizeof(wss_prefix)) == 0) {
+	// SSL connection
+	_is_SSL = true;
+    }
+
+    if (_is_SSL) {
+	/*
+	  setup SSL connection with OpenSSL
+	 */
+	const char *cert_file = SSL_CERT_DIR "fullchain.pem";
+	const char *key_file  = SSL_CERT_DIR "privkey.pem";
+	SSL_library_init();
+	OpenSSL_add_all_algorithms();
+	SSL_load_error_strings();
+	ctx = SSL_CTX_new(TLS_server_method());
+	if (!ctx) {
+	    printf("SSL_CTX_new failed");
+	    return;
+	}
+	if (SSL_CTX_use_certificate_chain_file(ctx, cert_file) <= 0) {
+	    ERR_print_errors_fp(stdout);
+	    return;
+	}
+	if (SSL_CTX_use_PrivateKey_file(ctx, key_file, SSL_FILETYPE_PEM) <= 0) {
+	    ERR_print_errors_fp(stdout);
+	    return;
+	}
+	ssl = SSL_new(ctx);
+	SSL_set_fd(ssl, fd);
+	if (SSL_accept(ssl) <= 0) {
+	    ERR_print_errors_fp(stdout);
+	    return;
+	}
+
+	printf("SSL handshake completed\n");
+    }
+
+    fill_pending();
+    check_headers();
+}
+
+void WebSocket::check_headers(void)
+{
+    auto len = strnlen((const char *)pending, npending);
 
     // parse Sec-WebSocket-Key from HTTP headers
-    std::string headers(reinterpret_cast<const char *>(buf), len);
+    std::string headers(reinterpret_cast<const char *>(pending), len);
     std::string key_marker = "Sec-WebSocket-Key: ";
     size_t key_pos = headers.find(key_marker);
     if (key_pos != std::string::npos) {
@@ -28,7 +102,32 @@ WebSocket::WebSocket(int _fd, const char *buf)
 	if (end != std::string::npos) {
 	    std::string sec_key = headers.substr(key_pos, end - key_pos);
 	    send_handshake(sec_key);
+	    done_headers = true;
+	    npending = 0;
+	    printf("WebSocket: done headers\n");
         }
+    }
+}
+
+/*
+  try to receive more data
+ */
+void WebSocket::fill_pending(void)
+{
+    // ensure always null terminated
+    auto space = (sizeof(pending)-1) - npending;
+    if (fd >= 0 && space > 0) {
+	ssize_t n;
+	if (ssl) {
+	    n = SSL_read(ssl, &pending[npending], space);
+	} else {
+	    n = ::recv(fd, &pending[npending], space, 0);
+	}
+	if (n < 0) {
+	    close(fd);
+	    fd = -1;
+	}
+	npending += n;
     }
 }
 
@@ -36,7 +135,7 @@ WebSocket::WebSocket(int _fd, const char *buf)
   decode an incoming WebSocket packet and overwrite buf with the decoded data
   return the number of decoded payload bytes, or -1 on error
  */
-ssize_t WebSocket::decode(uint8_t *buf, size_t n)
+ssize_t WebSocket::decode(uint8_t *buf, size_t n, size_t &used)
 {
     if (n < 2) return -1;
 
@@ -72,6 +171,8 @@ ssize_t WebSocket::decode(uint8_t *buf, size_t n)
 	}
         memmove(buf, buf + pos, payload_len);
     }
+
+    used = pos + payload_len;
 
     return payload_len;
 }
@@ -120,7 +221,11 @@ void WebSocket::send_handshake(const std::string &key)
              "\r\n",
 	     accept_val.c_str());
 
-    ::send(fd, response, strlen(response), 0);
+    if (ssl) {
+	SSL_write(ssl, response, strlen(response));
+    } else {
+	::send(fd, response, strlen(response), 0);
+    }
 }
 
 /*
@@ -145,19 +250,45 @@ ssize_t WebSocket::send(const void *buf, size_t n)
         header_len = 10;
     }
 
-    struct iovec iov[2];
-    iov[0].iov_base = header;
-    iov[0].iov_len = header_len;
-    iov[1].iov_base = (void *)buf;
-    iov[1].iov_len = n;
+    uint8_t pkt[header_len + n];
+    memcpy(pkt, header, header_len);
+    memcpy(&pkt[header_len], buf, n);
 
-    struct msghdr msg = {};
-    msg.msg_iov = iov;
-    msg.msg_iovlen = 2;
-
-    auto sent = sendmsg(fd, &msg, 0);
-    if (sent < (ssize_t)header_len) {
+    ssize_t sent;
+    if (_is_SSL && ssl) {
+	sent = SSL_write(ssl, pkt, sizeof(pkt));
+    } else {
+	sent = ::send(fd, pkt, sizeof(pkt), 0);
+    }
+    if (sent < ssize_t(sizeof(pkt))) {
 	return -1;
     }
-    return sent - header_len; // return number of payload bytes sent
+    return sizeof(pkt) - header_len;
+}
+
+/*
+  receive some data
+ */
+ssize_t WebSocket::recv(void *buf, size_t n)
+{
+    fill_pending();
+    if (fd < 0) {
+	return -1;
+    }
+    if (!done_headers) {
+	check_headers();
+    }
+    size_t used;
+    auto decode_len = decode(pending, npending, used);
+    if (decode_len == -1) {
+	return 0;
+    }
+    if (ssize_t(n) > decode_len) {
+	n = decode_len;
+    }
+
+    memcpy(buf, pending, n);
+    memmove(pending, &pending[used], npending-used);
+    npending -= used;
+    return n;
 }
