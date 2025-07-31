@@ -33,7 +33,4 @@ private:
     void send_handshake(const std::string &key);
     void check_headers(void);
     ssize_t decode(uint8_t *buf, size_t n, size_t &used);
-
-    static constexpr const char *ws_prefix = "GET / HTTP/1.1";
-    static constexpr uint8_t wss_prefix[] { 0x16, 0x03, 0x01 };
 };

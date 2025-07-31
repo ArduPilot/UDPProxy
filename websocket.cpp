@@ -18,6 +18,9 @@
 #define SSL_CERT_DIR "./"
 #endif
 
+static const char *ws_prefix = "GET / HTTP/1.1";
+static uint8_t wss_prefix[] { 0x16, 0x03, 0x01 };
+
 /*
   see if this could be a WebSocket connection by looking at the first
   packet
