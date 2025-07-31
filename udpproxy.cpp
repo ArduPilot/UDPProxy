@@ -300,6 +300,12 @@ static void main_loop(struct listen_port *p)
 	    if (conn2_count > 0) {
 		uint8_t *buf0 = buf;
 		while (n > 0 && mav1.receive_message(buf0, n, msg)) {
+		    if (p->sock2_udp != -1) {
+			if (!conn2[0].mav.send_message(msg)) {
+			    conn2[0].close();
+			    conn2_count--;
+			}
+		    }
 		    for (auto &c2 : conn2) {
 			if (c2.sock != -1 && !c2.mav.send_message(msg)) {
 			    c2.close();
