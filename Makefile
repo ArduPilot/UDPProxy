@@ -63,6 +63,12 @@ $(TARGET): $(OBJECTS)
 	@echo "Compiling $<..."
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+# Special rule for mavlink.o to suppress stringop-truncation warning
+# This is needed due to MAVLink library using strncpy for fixed-size character arrays
+mavlink.o: mavlink.cpp mavlink.h $(MAVLINK_DIR)/protocol.h
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) -Wno-stringop-truncation -c $< -o $@
+
 # Dependencies
 udpproxy.o: udpproxy.cpp mavlink.h util.h keydb.h websocket.h
 mavlink.o: mavlink.cpp mavlink.h $(MAVLINK_DIR)/protocol.h
