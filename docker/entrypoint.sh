@@ -15,7 +15,8 @@ elif [ "$1" = "keydb.py" ]; then
 # If first argument is bash or sh, run it
 elif [ "$1" = "bash" ] || [ "$1" = "sh" ]; then
     exec "$@"
-# Otherwise run udpproxy
+# Otherwise run udpproxy and redirect output to proxy.log (like start_proxy.sh)
 else
-    exec /app/udpproxy "$@"
+    echo "$(date): Starting UDPProxy" >> proxy.log
+    exec /app/udpproxy "$@" >> proxy.log 2>&1
 fi

@@ -1,9 +1,14 @@
 #!/bin/bash
 
 # Test runner script for UDPProxy
-# This script sets up the environment and runs all tests
+# This script runs all tests with proper error handling
 
 set -e  # Exit on any error
+set -u  # Exit on undefined variable
+set -o pipefail  # Exit on pipe failure
+
+# Ensure we're running from repository root
+cd "$(dirname "$0")/.."
 
 echo "=== UDPProxy Test Runner ==="
 
@@ -20,31 +25,17 @@ cleanup() {
     fi
 }
 
-# Set trap to ensure cleanup happens even if script fails
+# Set trap to ensure cleanup happens on normal exit too
 trap cleanup EXIT
-
-# Check if virtual environment exists
-if [ ! -d "venv" ]; then
-    echo "Creating Python virtual environment with system site packages..."
-    python3 -m venv --system-site-packages venv
-fi
 
 # Activate virtual environment
 echo "Activating virtual environment..."
 source venv/bin/activate
 
-# Install/upgrade dependencies
-echo "Installing Python dependencies..."
-pip install --upgrade pip
-pip install pytest pymavlink
-
-# Ensure submodules are initialized
-echo "Updating git submodules..."
-git submodule update --init --recursive
-
 # Build UDPProxy
 echo "Building UDPProxy..."
 make clean
+make distclean
 make all
 
 # Verify build
@@ -52,6 +43,8 @@ if [ ! -f "./udpproxy" ]; then
     echo "ERROR: UDPProxy build failed - executable not found"
     exit 1
 fi
+
+echo "✓ UDPProxy binary built successfully"
 
 # Backup existing database if it exists
 echo "Setting up test database..."
@@ -61,14 +54,15 @@ if [ -f "keys.tdb" ]; then
 fi
 
 # Create fresh test database
-python keydb.py initialise
+echo "Initializing test database..."
+python3 keydb.py initialise
 
 # Run tests
-echo "Running tests..."
-
-# Run different test suites
 echo ""
-echo "=== Running UDP Connection Tests ==="
+echo "=== Running Tests ==="
+
+echo ""
+echo "=== Running Connection Tests ==="
 pytest tests/test_connections.py -v -s
 
 echo ""
