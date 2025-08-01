@@ -1,6 +1,6 @@
 # UDP Proxy for MAVLink
 
-This is a UDP/TCP Proxy for MAVLink to facilitate remote support of ArduPilot users.
+This is a UDP/TCP/WebSocket Proxy for MAVLink to facilitate remote support of ArduPilot users.
 
 For more information on using the support proxy see https://support.ardupilot.org
 
@@ -11,8 +11,9 @@ For more information on using the support proxy see https://support.ardupilot.or
 - Uses MAVLink2 signed connections from the support engineer
 - Uses normal UDP/TCP forwarding in users GCS
 - Supports both TCP and UDP, including mixed connections
-- Supports WebSocket TCP connections on support engineer side
-- supports up to 8 simultaneous connections on TCP by support engineer
+- Supports WebSocket and WebSocket+SSL TCP connections for both user
+  and support engineer
+- supports up to 8 simultaneous connections by support engineer
 
 ## How It Works
 
@@ -24,7 +25,10 @@ UDPProxy acts as a bridge between ArduPilot users and support engineers:
 2. **Proxy Server**: Routes traffic between user and engineer ports with authentication
 3. **Engineer Side**: Connects with MAVLink2 signed authentication (e.g., port 10002)
 
-This allows both parties to be behind NAT/firewalls while maintaining secure, authenticated connections.
+This allows both parties to be behind NAT/firewalls while maintaining
+secure, authenticated connections.
+
+Both sides can optionally use WebSocket+SSL to get a fully encrypted link.
 
 ## Building
 
@@ -111,6 +115,16 @@ Add support engineer and user port pairs:
 # Check if running in another terminal
 pgrep udpproxy
 ```
+
+### Supporting WebSocket + SSL
+
+To support SSL encrypted links for WebSocket connections (both for
+user connections and support engineer connections) you will need to
+provide a fullchain.pem and privkey.pem file in the directory where
+you start udpproxy. These files must be readable by udpproxy. SSL
+support has been tested with Let's Encrypt certificates. Note that
+when you renew your certificates you will need to update the files in
+this directory, or use symlinks to the system certificates.
 
 ### Automatic Startup
 
