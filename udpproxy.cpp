@@ -45,6 +45,7 @@ struct listen_port {
     int sock1_udp, sock2_udp;
     int sock1_tcp, sock2_listen;
     pid_t pid;
+    WebSocket *ws = nullptr;
 };
 
 static struct listen_port *ports;
@@ -139,7 +140,7 @@ public:
 
 static void main_loop(struct listen_port *p)
 {
-    unsigned char buf[10240];
+    unsigned char buf[10240] {};
     bool have_conn1=false;
     double last_pkt1=0;
     double last_pkt2=0;
@@ -357,7 +358,22 @@ static void main_loop(struct listen_port *p)
 	if (p->sock1_tcp != -1 &&
 	    FD_ISSET(p->sock1_tcp, &fds)) {
 	    close_fd(p->sock1_udp);
-	    ssize_t n = recv(p->sock1_tcp, buf, sizeof(buf), 0);
+
+	    if (count1 == 0 && WebSocket::detect(p->sock1_tcp)) {
+		p->ws = new WebSocket(p->sock1_tcp);
+		if (p->ws == nullptr) {
+		    break;
+		}
+		mav1.set_ws(p->ws);
+		printf("[%d] %s WebSocket%s conn1\n", unsigned(p->port2), time_string(),
+		       p->ws->is_SSL()?" SSL":"");
+	    }
+	    ssize_t n;
+	    if (p->ws) {
+		n = p->ws->recv(buf, sizeof(buf)-1);
+	    } else {
+		n = recv(p->sock1_tcp, buf, sizeof(buf)-1, 0);
+	    }
 	    if (n <= 0) {
 		printf("[%d] %s EOF TCP conn1\n", unsigned(p->port2), time_string());
 		break;
