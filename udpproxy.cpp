@@ -119,13 +119,21 @@ static void close_fd(int &fd)
 class Connection2 {
 public:
     int sock = -1;
-    bool active = false;
+    bool used = false;
+    bool tcp_active = false;
     MAVLink mav;
     WebSocket *ws = nullptr;
+    struct sockaddr_in from;
+    socklen_t fromlen = 0;
+    bool is_udp = false;
+    double last_pkt = 0;
 
     void close(void) {
 	close_fd(sock);
-	active = false;
+	tcp_active = false;
+	used = false;
+	delete ws;
+	ws = nullptr;
     }
 };
 
@@ -191,8 +199,23 @@ static void main_loop(struct listen_port *p)
         if (ret == -1 && errno == EINTR) continue;
         if (ret <= 0) break;
 
-        now = time_seconds();
+	now = time_seconds();
 
+	/*
+	  check for dead UDP conn2
+	 */
+	for (auto &c2 : conn2) {
+	    if (c2.used && c2.is_udp && now - c2.last_pkt > 10) {
+		printf("[%d] %s dead UDP conn2[%d]\n",
+		       unsigned(p->port2), time_string(),
+		       int(&c2 - &conn2[0])+1);
+		c2.close();
+	    }
+	}
+
+	/*
+	  check for UDP user data
+	 */
 	if (p->sock1_udp != -1 &&
 	    FD_ISSET(p->sock1_udp, &fds)) {
 	    close_fd(p->sock1_tcp);
@@ -216,13 +239,16 @@ static void main_loop(struct listen_port *p)
 		uint8_t *buf0 = buf;
 		while (n > 0 && mav1.receive_message(buf0, n, msg)) {
 		    for (auto &c2 : conn2) {
-			if (c2.sock != -1 && !c2.mav.send_message(msg)) {
+			if (!c2.used) {
+			    continue;
+			}
+			if (!c2.is_udp && c2.sock != -1 && !c2.mav.send_message(msg)) {
 			    c2.close();
 			    conn2_count--;
 			}
-		    }
-		    if (p->sock2_udp != -1) {
-			conn2[0].mav.send_message(msg);
+			if (c2.is_udp) {
+			    c2.mav.send_message(msg);
+			}
 		    }
 		}
 		if (conn2_count == 0) {
@@ -231,9 +257,11 @@ static void main_loop(struct listen_port *p)
             }
         }
 
+	/*
+	  check for UDP support engineer data
+	 */
 	if (p->sock2_udp != -1 &&
 	    FD_ISSET(p->sock2_udp, &fds)) {
-	    close_fd(p->sock2_listen);
 	    struct sockaddr_in from;
             socklen_t fromlen = sizeof(from);
 	    ssize_t n = recvfrom(p->sock2_udp, buf, sizeof(buf), 0,
@@ -241,30 +269,67 @@ static void main_loop(struct listen_port *p)
             if (n <= 0) break;
             last_pkt2 = now;
 	    count2++;
-	    if (conn2_count == 0) {
-                if (connect(p->sock2_udp, (struct sockaddr *)&from, fromlen) != 0) {
-                    break;
+
+	    // find existing slot
+	    int idx = -1;
+	    for (auto &c2 : conn2) {
+		if (c2.used && c2.is_udp &&
+		    from.sin_addr.s_addr == c2.from.sin_addr.s_addr &&
+		    from.sin_port == c2.from.sin_port &&
+		    fromlen == c2.fromlen) {
+		    // found it
+		    idx = &c2 - &conn2[0];
+		    c2.last_pkt = now;
+		    break;
 		}
-		conn2[0].mav.init(p->sock2_udp, CHAN_COMM2(0), true, false, p->port2);
-		conn2_count++;
-		printf("[%u] %s have UDP conn2 from %s\n", unsigned(p->port2), time_string(), addr_to_str(from));
-            }
-            mavlink_message_t msg {};
-	    if (have_conn1) {
-		uint8_t *buf0 = buf;
-		bool failed = false;
-		while (n > 0 && conn2[0].mav.receive_message(buf0, n, msg)) {
-		    if (!mav1.send_message(msg)) {
-			failed = true;
+	    }
+
+	    if (idx == -1) {
+		// find a free slot
+		for (auto &c2 : conn2) {
+		    if (!c2.used) {
+			c2.from = from;
+			c2.fromlen = fromlen;
+			c2.tcp_active = true;
+			c2.sock = -1;
+			c2.is_udp = true;
+			conn2_count++;
+			c2.mav.init(p->sock2_udp, CHAN_COMM2(0), true, false, p->port2);
+			c2.mav.set_sendto(from, fromlen);
+			c2.used = true;
+			c2.last_pkt = now;
+			printf("[%u] %s have UDP conn2[%d] from %s\n",
+			       unsigned(p->port2), time_string(),
+			       int(&c2 - &conn2[0])+1,
+			       addr_to_str(from));
+			idx = &c2 - &conn2[0];
 			break;
 		    }
 		}
-		if (failed) {
-		    break;
+	    }
+
+	    if (idx != -1) {
+		mavlink_message_t msg {};
+		if (have_conn1) {
+		    uint8_t *buf0 = buf;
+		    bool failed = false;
+		    auto &c2 = conn2[idx];
+		    while (n > 0 && c2.mav.receive_message(buf0, n, msg)) {
+			if (!mav1.send_message(msg)) {
+			    failed = true;
+			    break;
+			}
+		    }
+		    if (failed) {
+			break;
+		    }
 		}
-            }
+	    }
 	}
 
+	/*
+	  check for TCP user new connections
+	 */
 	if (!have_conn1 &&
 	    p->sock1_tcp != -1 &&
 	    FD_ISSET(p->sock1_tcp, &fds)) {
@@ -286,6 +351,9 @@ static void main_loop(struct listen_port *p)
 	    continue;
 	}
 
+	/*
+	  check for TCP user data
+	 */
 	if (p->sock1_tcp != -1 &&
 	    FD_ISSET(p->sock1_tcp, &fds)) {
 	    close_fd(p->sock1_udp);
@@ -300,14 +368,11 @@ static void main_loop(struct listen_port *p)
 	    if (conn2_count > 0) {
 		uint8_t *buf0 = buf;
 		while (n > 0 && mav1.receive_message(buf0, n, msg)) {
-		    if (p->sock2_udp != -1) {
-			if (!conn2[0].mav.send_message(msg)) {
-			    conn2[0].close();
-			    conn2_count--;
-			}
-		    }
 		    for (auto &c2 : conn2) {
-			if (c2.sock != -1 && !c2.mav.send_message(msg)) {
+			if (!c2.used) {
+			    continue;
+			}
+			if (!c2.mav.send_message(msg)) {
 			    c2.close();
 			    conn2_count--;
 			}
@@ -320,11 +385,10 @@ static void main_loop(struct listen_port *p)
 	}
 
 	/*
-	  check for new TCP conn2 connection
+	  check for new TCP support engineer connection
 	 */
 	if (p->sock2_listen != -1 &&
 	    FD_ISSET(p->sock2_listen, &fds)) {
-	    close_fd(p->sock2_udp);
 	    struct sockaddr_in from;
 	    socklen_t fromlen = sizeof(from);
 	    int fd2 = accept(p->sock2_listen, (struct sockaddr *)&from, &fromlen);
@@ -341,7 +405,7 @@ static void main_loop(struct listen_port *p)
 
 	    uint8_t i;
 	    for (i=0; i<max_conn2_count; i++) {
-		if (conn2[i].sock == -1) {
+		if (!conn2[i].used) {
 		    break;
 		}
 	    }
@@ -352,7 +416,9 @@ static void main_loop(struct listen_port *p)
 	    }
 	    auto &c2 = conn2[i];
 	    c2.sock = fd2;
-	    c2.active = false;
+	    c2.tcp_active = false;
+	    c2.used = true;
+	    c2.is_udp = false;
 	    fdmax = MAX(fdmax, c2.sock);
 	    printf("[%d] %s have TCP conn2[%u] for from %s\n", unsigned(p->port2), time_string(), unsigned(i+1), addr_to_str(from));
 	    c2.mav.init(c2.sock, CHAN_COMM2(i), true, true, p->port2);
@@ -361,14 +427,16 @@ static void main_loop(struct listen_port *p)
 	    continue;
 	}
 
+	/*
+	  check for new TCP support engineer data
+	 */
 	for (uint8_t i=0; i<max_conn2_count; i++) {
 	    auto &c2 = conn2[i];
-	    if (c2.sock == -1) {
+	    if (c2.is_udp || !c2.used || c2.sock == -1) {
 		continue;
 	    }
 	    if (FD_ISSET(c2.sock, &fds)) {
-		close_fd(p->sock2_udp);
-		if (!c2.active && WebSocket::detect(c2.sock)) {
+		if (!c2.tcp_active && WebSocket::detect(c2.sock)) {
 		    c2.ws = new WebSocket(c2.sock);
 		    if (c2.ws == nullptr) {
 			break;
@@ -394,7 +462,7 @@ static void main_loop(struct listen_port *p)
 		buf[n] = 0;
 		last_pkt2 = now;
 		count2++;
-		c2.active = true;
+		c2.tcp_active = true;
 		mavlink_message_t msg {};
 		if (have_conn1) {
 		    uint8_t *buf0 = buf;
