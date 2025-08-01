@@ -54,6 +54,7 @@ void MAVLink::init(int _fd, mavlink_channel_t _chan, bool signing_required, bool
     bad_sig_count = 0;
     allow_websocket = _allow_websocket;
     got_bad_signature[chan] = false;
+    use_sendto = false;
 
     ZERO_STRUCT(signing_streams);
     ZERO_STRUCT(signing);
@@ -71,6 +72,9 @@ ssize_t MAVLink::send_data(const void *buf, ssize_t len)
 {
     if (ws) {
 	return ws->send(buf, len);
+    }
+    if (use_sendto) {
+	return ::sendto(fd, buf, len, 0, (const sockaddr *)&send_addr, send_len);
     }
     return ::send(fd, buf, len, 0);
 }

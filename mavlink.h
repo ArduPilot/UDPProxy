@@ -6,6 +6,9 @@
 #include "mavlink_msgs.h"
 #include "keydb.h"
 #include "websocket.h"
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 
 typedef ssize_t (*send_fn_t)(int, const void *, size_t , int);
 
@@ -20,6 +23,11 @@ public:
     void set_ws(WebSocket *_ws) {
 	ws = _ws;
     }
+    void set_sendto(const struct sockaddr_in &_send_addr, socklen_t _send_len) {
+	use_sendto = true;
+	send_addr = _send_addr;
+	send_len = _send_len;
+    }
 
 private:
     struct KeyEntry key;
@@ -30,6 +38,9 @@ private:
     bool got_signed_packet = false;
     static bool got_bad_signature[MAVLINK_COMM_NUM_BUFFERS];
     bool allow_websocket;
+    bool use_sendto;
+    struct sockaddr_in send_addr;
+    socklen_t send_len;
 
     mavlink_signing_streams_t signing_streams {};
     mavlink_signing_t signing {};
