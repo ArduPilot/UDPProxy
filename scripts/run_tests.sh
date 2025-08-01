@@ -30,7 +30,7 @@ trap cleanup EXIT
 
 # Activate virtual environment
 echo "Activating virtual environment..."
-source venv/bin/activate
+test -f venv/bin/activate && source venv/bin/activate
 
 # Build UDPProxy
 echo "Building UDPProxy..."
