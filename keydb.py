@@ -68,7 +68,7 @@ class KeyEntry:
         self.secret_key = h.digest()
 
     def __str__(self):
-        return "%u/%u '%s' counts=%u/%u connections=%u" % (self.port1, self.port2, self.name.rstrip('\0'), self.count1, self.count2, self.connections)
+        return "%u/%u '%s' counts=%u/%u connections=%u ts=%u" % (self.port1, self.port2, self.name.rstrip('\0'), self.count1, self.count2, self.connections, self.timestamp)
 
 
 def get_port_sets(db):
@@ -211,6 +211,22 @@ def set_pass(db, args):
     print("Set passphase for %s" % ke)
 
 
+def reset_timestamp(db, args):
+    '''reset timestamp'''
+    if len(args) != 1:
+        print("Usage: keydb.py resettimestamp PORT2")
+        sys_exit(1)
+    port2 = int(args[0])
+
+    ke = KeyEntry(port2)
+    if not ke.fetch(db):
+        print("No entry for port2 %d" % port2)
+        sys_exit(1)
+    ke.timestamp = 0
+    ke.store(db)
+    print("Reset timestamp for %s" % ke)
+
+
 def set_port1(db, args):
     '''set port1'''
     if len(args) != 2:
@@ -234,7 +250,8 @@ parser.add_argument("--keydb", default="keys.tdb",
                     help="key database tdb filename")
 parser.add_argument("action", default=None,
                     choices=['list', 'convert', 'add', 'remove',
-                             'setname', 'setpass', 'setport1', 'initialise'],
+                             'setname', 'setpass', 'setport1', 'initialise',
+                             'resettimestamp'],
                     help="action to perform")
 parser.add_argument("args", default=[], nargs=argparse.REMAINDER)
 args = parser.parse_args()
@@ -263,6 +280,8 @@ elif args.action == "add":
     add_entry(db, args.args)
 elif args.action == "remove":
     remove_entry(db, args.args)
+elif args.action == "resettimestamp":
+    reset_timestamp(db, args.args)
 elif args.action == "setpass":
     set_pass(db, args.args)
 elif args.action == "setport1":
