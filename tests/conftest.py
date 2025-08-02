@@ -87,11 +87,17 @@ class UDPProxyProcess:
     def __init__(self, temp_dir, executable="udpproxy"):
         self.temp_dir = temp_dir
         self.executable_path = os.path.join(temp_dir, executable)
+        self.last_output_time = time.time()
+        self.last_seen_lines = set()
 
         # Start UDPProxy from the temporary directory
+        self._start_process()
+
+    def _start_process(self):
+        """Start or restart the UDPProxy process."""
         self.proc = subprocess.Popen(
             [self.executable_path],
-            cwd=temp_dir,  # Run from temp directory
+            cwd=self.temp_dir,  # Run from temp directory
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             bufsize=1,
@@ -100,20 +106,94 @@ class UDPProxyProcess:
         self._stdout_lines = []
         self._stderr_lines = []
         self._stdout_thread = threading.Thread(
-            target=self._read_stream, args=(self.proc.stdout, self._stdout_lines))
+            target=self._read_stream,
+            args=(self.proc.stdout, self._stdout_lines))
         self._stderr_thread = threading.Thread(
-            target=self._read_stream, args=(self.proc.stderr, self._stderr_lines))
+            target=self._read_stream,
+            args=(self.proc.stderr, self._stderr_lines))
         self._stdout_thread.daemon = True
         self._stderr_thread.daemon = True
         self._stdout_thread.start()
         self._stderr_thread.start()
         self._stdout_last_idx = 0
         self._stderr_last_idx = 0
+        self.last_output_time = time.time()
+        self.last_seen_lines = set()
 
     def _read_stream(self, stream, lines):
         for line in iter(stream.readline, ''):
             lines.append(line)
+            self.last_output_time = time.time()
         stream.close()
+
+    def is_responsive(self, max_age_seconds=30, max_repeated_lines=10):
+        """Check if UDPProxy is responsive and not outputting stale data."""
+        current_time = time.time()
+
+        # Check if process is alive
+        if self.proc.poll() is not None:
+            exit_code = self.proc.poll()
+            print(f"DEBUG: UDPProxy process has died (exit code: {exit_code})")
+            return False
+
+        # Check if output is too old (no new output for too long)
+        if current_time - self.last_output_time > max_age_seconds:
+            age = current_time - self.last_output_time
+            print(f"DEBUG: UDPProxy output is stale ({age:.1f}s ago)")
+            return False
+
+        # Check for repeated lines (indicating stale output)
+        recent_lines = []
+        if len(self._stdout_lines) > 0:
+            recent_lines.extend(self._stdout_lines[-5:])  # Last 5 stdout
+        if len(self._stderr_lines) > 0:
+            recent_lines.extend(self._stderr_lines[-5:])  # Last 5 stderr
+
+        # Count repeated lines
+        repeated_count = 0
+        for line in recent_lines:
+            if line.strip() in self.last_seen_lines:
+                repeated_count += 1
+            else:
+                self.last_seen_lines.add(line.strip())
+
+        # Keep only recent lines to prevent memory buildup
+        if len(self.last_seen_lines) > 50:
+            # Keep only the most recent lines
+            recent_line_set = set(line.strip() for line in recent_lines)
+            self.last_seen_lines = recent_line_set
+
+        if repeated_count >= max_repeated_lines:
+            print(f"DEBUG: UDPProxy has {repeated_count} repeated lines, "
+                  f"appears stale")
+            return False
+
+        return True
+
+    def restart_if_needed(self, force=False):
+        """Restart UDPProxy if it's not responsive."""
+        if not self.is_responsive() or force:
+            print("DEBUG: UDPProxy appears unresponsive, restarting...")
+            self.terminate()
+            time.sleep(1)  # Wait for cleanup
+            self._start_process()
+
+            # Wait for restart to complete
+            max_wait = 10
+            start_time = time.time()
+            while time.time() - start_time < max_wait:
+                time.sleep(0.5)
+                stdout, stderr = self.get_new_output_since_last_check()
+                output = stdout + stderr
+
+                if ("Opening sockets" in output and
+                        "Added port 14552/14553" in output):
+                    print("DEBUG: UDPProxy restarted successfully")
+                    return True
+
+            print("WARNING: UDPProxy restart may not have completed properly")
+            return False
+        return True
 
     def get_new_output_since_last_check(self):
         stdout_new = self._stdout_lines[self._stdout_last_idx:]
@@ -244,3 +324,41 @@ def temp_test_env(test_server):
         'keydb_path': os.path.join(test_server.temp_dir, 'keydb.py'),
         'udpproxy_path': os.path.join(test_server.temp_dir, 'udpproxy')
     }
+
+
+@pytest.fixture(scope="function")
+def healthy_server(test_server):
+    """Fixture that ensures UDPProxy is healthy before each test."""
+    print("DEBUG: Checking UDPProxy health before test")
+    
+    # Reset timestamps in database before each test to avoid timestamp issues
+    reset_database_timestamps(test_server)
+
+    # Check if server needs restart
+    if not test_server.restart_if_needed():
+        pytest.fail("UDPProxy failed to restart when needed")
+
+    # Give it a moment to stabilize after restart
+    time.sleep(0.5)
+
+    print("DEBUG: UDPProxy health check passed")
+    return test_server
+
+
+def reset_database_timestamps(test_server):
+    """Reset timestamps in the database to avoid timestamp-related issues."""
+    keydb_path = os.path.join(test_server.temp_dir, 'keydb.py')
+    port2 = TEST_PORT_ENGINEER
+    
+    try:
+        print(f"DEBUG: Resetting timestamp for port {port2}")
+        result = subprocess.run(
+            ['python', keydb_path, 'resettimestamp', str(port2)],
+            cwd=test_server.temp_dir, capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"DEBUG: Successfully reset timestamp: "
+                  f"{result.stdout.strip()}")
+        else:
+            print(f"WARNING: Failed to reset timestamp: {result.stderr}")
+    except Exception as e:
+        print(f"WARNING: Exception resetting timestamp: {e}")

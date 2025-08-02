@@ -9,6 +9,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
     - uses: actions/checkout@v4
@@ -27,8 +28,9 @@ jobs:
       run: |
         set -e  # Exit on any error
         echo "Running test script..."
-        scripts/run_tests.sh
+        timeout 1200 scripts/run_tests.sh
         echo "All tests completed successfully"
+      timeout-minutes: 20
 
   docker-test:
     runs-on: ubuntu-latest
@@ -83,3 +85,4 @@ jobs:
 
         # Cleanup
         docker volume rm udpproxy-test-data
+      timeout-minutes: 10
