@@ -16,6 +16,11 @@ echo "=== UDPProxy Test Runner ==="
 cleanup() {
     echo ""
     echo "=== Cleanup ==="
+
+    # Kill any remaining UDPProxy processes
+    pkill -f udpproxy || true
+    pkill -9 -f pytest || true
+
     if [ -f "keys.tdb.backup" ]; then
         echo "Restoring original keys.tdb from backup"
         mv keys.tdb.backup keys.tdb

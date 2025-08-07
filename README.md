@@ -52,7 +52,7 @@ python3 -m venv --system-site-packages venv
 source venv/bin/activate
 
 # Install pymavlink in the virtual environment
-pip install pymavlink
+pip install pymavlink wsproto
 ```
 
 ### Get the source
