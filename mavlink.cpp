@@ -380,6 +380,20 @@ void MAVLink::mav_printf(uint8_t severity, const char *fmt, ...)
         ::printf("[%d]: %s\n", key_id, text);
 	send_data(buf, len);
     }
+
+    // also send signed so for old timestamp the client gets a chance
+    // to update the timestamp
+    mavlink_message_t msg2 {};
+    mavlink_msg_statustext_pack_chan(last_sysid, last_compid,
+				     chan,
+				     &msg2,
+                                     severity,
+                                     text,
+                                     0, 0);
+    uint16_t len2 = mavlink_msg_to_send_buffer(buf, &msg2);
+    if (len2 > 0) {
+	send_data(buf, len2);
+    }
 }
 
 /*
