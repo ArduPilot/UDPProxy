@@ -143,7 +143,6 @@ static void main_loop(struct listen_port *p)
     unsigned char buf[10240] {};
     bool have_conn1=false;
     double last_pkt1=0;
-    double last_pkt2=0;
     uint32_t count1=0, count2=0;
     int fdmax = -1;
     /*
@@ -170,10 +169,7 @@ static void main_loop(struct listen_port *p)
         if (have_conn1 && now - last_pkt1 > 10) {
             break;
         }
-	if (conn2_count>0 && now - last_pkt2 > 10) {
-            break;
-        }
-            
+
 	FD_ZERO(&fds);
 	if (p->sock1_udp != -1) {
 	    FD_SET(p->sock1_udp, &fds);
@@ -224,7 +220,7 @@ static void main_loop(struct listen_port *p)
             socklen_t fromlen = sizeof(from);
 	    ssize_t n = recvfrom(p->sock1_udp, buf, sizeof(buf), 0,
                              (struct sockaddr *)&from, &fromlen);
-            if (n <= 0) break;
+	    if (n < 0) break;
             last_pkt1 = now;
             count1++;
             if (!have_conn1) {
@@ -252,10 +248,7 @@ static void main_loop(struct listen_port *p)
 			}
 		    }
 		}
-		if (conn2_count == 0) {
-		    break;
-		}
-            }
+	    }
         }
 
 	/*
@@ -267,8 +260,7 @@ static void main_loop(struct listen_port *p)
             socklen_t fromlen = sizeof(from);
 	    ssize_t n = recvfrom(p->sock2_udp, buf, sizeof(buf), 0,
                              (struct sockaddr *)&from, &fromlen);
-            if (n <= 0) break;
-            last_pkt2 = now;
+	    if (n < 0) break;
 	    count2++;
 
 	    // find existing slot
@@ -394,10 +386,7 @@ static void main_loop(struct listen_port *p)
 			}
 		    }
 		}
-		if (conn2_count == 0) {
-		    break;
-		}
-            }
+	    }
 	}
 
 	/*
@@ -438,7 +427,6 @@ static void main_loop(struct listen_port *p)
 	    fdmax = MAX(fdmax, c2.sock);
 	    printf("[%d] %s have TCP conn2[%u] for from %s\n", unsigned(p->port2), time_string(), unsigned(i+1), addr_to_str(from));
 	    c2.mav.init(c2.sock, CHAN_COMM2(i), true, true, p->port2);
-	    last_pkt2 = now;
 	    conn2_count++;
 	    continue;
 	}
@@ -470,13 +458,9 @@ static void main_loop(struct listen_port *p)
 		    printf("[%d] %s EOF TCP conn2[%u]\n", unsigned(p->port2), time_string(), unsigned(i+1));
 		    c2.close();
 		    conn2_count--;
-		    if (conn2_count == 0) {
-			goto all_closed;
-		    }
 		    continue;
 		}
 		buf[n] = 0;
-		last_pkt2 = now;
 		count2++;
 		c2.tcp_active = true;
 		mavlink_message_t msg {};
@@ -497,7 +481,6 @@ static void main_loop(struct listen_port *p)
 	}
     }
 
-all_closed:
     if (count1 != 0 || count2 != 0) {
         printf("[%d] %s Closed connection count1=%u count2=%u\n",
                p->port2,
