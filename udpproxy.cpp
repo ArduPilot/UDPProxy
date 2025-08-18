@@ -146,14 +146,13 @@ static void main_loop(struct listen_port *p)
     uint32_t count1=0, count2=0;
     int fdmax = -1;
     /*
-      we allow more than one TCP connection on the support engineer
-      side, but only one UDP connection
+      we allow more than one connection on the support engineer side
      */
-    const uint8_t max_conn2_count = MAX_COMM2_LINKS;
+    uint8_t max_conn2_count = 0;
     uint8_t conn2_count = 0;
     MAVLink mav_blank;
     MAVLink mav1;
-    Connection2 conn2[max_conn2_count];
+    Connection2 conn2[MAX_COMM2_LINKS];
 
     fdmax = MAX(fdmax, p->sock1_udp);
     fdmax = MAX(fdmax, p->sock2_udp);
@@ -183,7 +182,8 @@ static void main_loop(struct listen_port *p)
 	if (p->sock2_listen != -1) {
 	    FD_SET(p->sock2_listen, &fds);
 	}
-	for (const auto &c2 : conn2) {
+	for (uint8_t i=0; i<max_conn2_count; i++) {
+	    const auto &c2 = conn2[i];
 	    if (c2.sock != -1) {
 		FD_SET(c2.sock, &fds);
 	    }
@@ -198,14 +198,20 @@ static void main_loop(struct listen_port *p)
 
 	now = time_seconds();
 
+	if (max_conn2_count > MAX_COMM2_LINKS) {
+	    printf("BUG: max_conn2_count=%d\n", int(max_conn2_count));
+	    exit(1);
+	}
+
 	/*
 	  check for dead UDP conn2
 	 */
-	for (auto &c2 : conn2) {
+	for (uint8_t i=0; i<max_conn2_count; i++) {
+	    auto &c2 = conn2[i];
 	    if (c2.used && c2.is_udp && now - c2.last_pkt > 10) {
-		printf("[%d] %s dead UDP conn2[%d]\n",
+		printf("[%d] %s dead UDP conn2[%u]\n",
 		       unsigned(p->port2), time_string(),
-		       int(&c2 - &conn2[0])+1);
+		       unsigned(i));
 		c2.close();
 	    }
 	}
@@ -235,12 +241,16 @@ static void main_loop(struct listen_port *p)
 	    if (conn2_count > 0) {
 		uint8_t *buf0 = buf;
 		while (n > 0 && mav1.receive_message(buf0, n, msg)) {
-		    for (auto &c2 : conn2) {
+		    for (uint8_t i=0; i<max_conn2_count; i++) {
+			auto &c2 = conn2[i];
 			if (!c2.used) {
 			    continue;
 			}
 			if (!c2.is_udp && c2.sock != -1 && !c2.mav.send_message(msg)) {
 			    c2.close();
+			    if (conn2_count == max_conn2_count) {
+				max_conn2_count--;
+			    }
 			    conn2_count--;
 			}
 			if (c2.is_udp) {
@@ -265,7 +275,8 @@ static void main_loop(struct listen_port *p)
 
 	    // find existing slot
 	    int idx = -1;
-	    for (auto &c2 : conn2) {
+	    for (uint8_t i=0; i<max_conn2_count; i++) {
+		auto &c2 = conn2[i];
 		if (c2.used && c2.is_udp &&
 		    from.sin_addr.s_addr == c2.from.sin_addr.s_addr &&
 		    from.sin_port == c2.from.sin_port &&
@@ -281,21 +292,22 @@ static void main_loop(struct listen_port *p)
 		// find a free slot
 		for (auto &c2 : conn2) {
 		    if (!c2.used) {
+			idx = int(&c2 - &conn2[0]),
 			c2.from = from;
 			c2.fromlen = fromlen;
 			c2.tcp_active = true;
 			c2.sock = -1;
 			c2.is_udp = true;
 			conn2_count++;
-			c2.mav.init(p->sock2_udp, CHAN_COMM2(0), true, false, p->port2);
+			max_conn2_count = MAX(max_conn2_count, conn2_count);
+			c2.mav.init(p->sock2_udp, CHAN_COMM2(idx), true, false, p->port2);
 			c2.mav.set_sendto(from, fromlen);
 			c2.used = true;
 			c2.last_pkt = now;
-			printf("[%u] %s have UDP conn2[%d] from %s\n",
+			printf("[%u] %s have UDP conn2[%u] from %s\n",
 			       unsigned(p->port2), time_string(),
-			       int(&c2 - &conn2[0])+1,
+			       unsigned(idx+1),
 			       addr_to_str(from));
-			idx = &c2 - &conn2[0];
 			break;
 		    }
 		}
@@ -376,12 +388,16 @@ static void main_loop(struct listen_port *p)
 	    if (conn2_count > 0) {
 		uint8_t *buf0 = buf;
 		while (n > 0 && mav1.receive_message(buf0, n, msg)) {
-		    for (auto &c2 : conn2) {
+		    for (uint8_t i=0; i<max_conn2_count; i++) {
+			auto &c2 = conn2[i];
 			if (!c2.used) {
 			    continue;
 			}
 			if (!c2.mav.send_message(msg)) {
 			    c2.close();
+			    if (conn2_count == max_conn2_count) {
+				max_conn2_count--;
+			    }
 			    conn2_count--;
 			}
 		    }
@@ -400,8 +416,7 @@ static void main_loop(struct listen_port *p)
 	    if (fd2 < 0) {
 		continue;
 	    }
-	    if (conn2_count >= max_conn2_count) {
-		// printf("[%d] %s too many TCP connections: max %u\n", unsigned(p->port2), time_string(), unsigned(max_conn2_count));
+	    if (conn2_count >= MAX_COMM2_LINKS) {
 		close(fd2);
 		continue;
 	    }
@@ -409,13 +424,13 @@ static void main_loop(struct listen_port *p)
 	    set_tcp_options(fd2);
 
 	    uint8_t i;
-	    for (i=0; i<max_conn2_count; i++) {
+	    for (i=0; i<MAX_COMM2_LINKS; i++) {
 		if (!conn2[i].used) {
 		    break;
 		}
 	    }
-	    if (i == max_conn2_count) {
-		printf("[%d] %s too many TCP connections BUG: max %u\n", unsigned(p->port2), time_string(), unsigned(max_conn2_count));
+	    if (i == MAX_COMM2_LINKS) {
+		printf("[%d] %s too many TCP connections BUG: max %u\n", unsigned(p->port2), time_string(), unsigned(MAX_COMM2_LINKS));
 		close(fd2);
 		continue;
 	    }
@@ -428,6 +443,7 @@ static void main_loop(struct listen_port *p)
 	    printf("[%d] %s have TCP conn2[%u] for from %s\n", unsigned(p->port2), time_string(), unsigned(i+1), addr_to_str(from));
 	    c2.mav.init(c2.sock, CHAN_COMM2(i), true, true, p->port2);
 	    conn2_count++;
+	    max_conn2_count = MAX(max_conn2_count, conn2_count);
 	    continue;
 	}
 
@@ -457,6 +473,9 @@ static void main_loop(struct listen_port *p)
 		if (n <= 0) {
 		    printf("[%d] %s EOF TCP conn2[%u]\n", unsigned(p->port2), time_string(), unsigned(i+1));
 		    c2.close();
+		    if (conn2_count == max_conn2_count) {
+			max_conn2_count--;
+		    }
 		    conn2_count--;
 		    continue;
 		}
