@@ -17,7 +17,7 @@ typedef ssize_t (*send_fn_t)(int, const void *, size_t , int);
  */
 class MAVLink {
 public:
-    void init(int fd, mavlink_channel_t chan, bool signing_required, bool allow_websocket, int key_id=-1);
+    void init(int fd, mavlink_channel_t chan, bool signing_required, bool allow_websocket, bool is_tcp, int key_id=-1);
     bool receive_message(uint8_t *&buf, ssize_t &len, mavlink_message_t &msg);
     bool send_message(const mavlink_message_t &msg);
     void set_ws(WebSocket *_ws) {
@@ -34,6 +34,7 @@ private:
     int fd;
     mavlink_channel_t chan;
     int key_id;
+    bool is_tcp;
     bool key_loaded = false;
     bool got_signed_packet = false;
     static bool got_bad_signature[MAVLINK_COMM_NUM_BUFFERS];

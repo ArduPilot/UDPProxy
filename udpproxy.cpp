@@ -233,7 +233,7 @@ static void main_loop(struct listen_port *p)
                 if (connect(p->sock1_udp, (struct sockaddr *)&from, fromlen) != 0) {
                     break;
                 }
-		mav1.init(p->sock1_udp, CHAN_COMM1, false, false);
+		mav1.init(p->sock1_udp, CHAN_COMM1, false, false, false);
                 have_conn1 = true;
 		printf("[%d] %s have UDP conn1 for from %s\n", unsigned(p->port2), time_string(), addr_to_str(from));
             }
@@ -300,7 +300,7 @@ static void main_loop(struct listen_port *p)
 			c2.is_udp = true;
 			conn2_count++;
 			max_conn2_count = MAX(max_conn2_count, conn2_count);
-			c2.mav.init(p->sock2_udp, CHAN_COMM2(idx), true, false, p->port2);
+			c2.mav.init(p->sock2_udp, CHAN_COMM2(idx), true, false, false, p->port2);
 			c2.mav.set_sendto(from, fromlen);
 			c2.used = true;
 			c2.last_pkt = now;
@@ -351,7 +351,7 @@ static void main_loop(struct listen_port *p)
 	    fdmax = MAX(fdmax, p->sock1_tcp);
 	    have_conn1 = true;
 	    printf("[%d] %s have TCP conn1 for from %s\n", unsigned(p->port2), time_string(), addr_to_str(from));
-	    mav1.init(p->sock1_tcp, CHAN_COMM1, false, false);
+	    mav1.init(p->sock1_tcp, CHAN_COMM1, false, false, true);
 	    last_pkt1 = now;
 	    continue;
 	}
@@ -441,7 +441,7 @@ static void main_loop(struct listen_port *p)
 	    c2.is_udp = false;
 	    fdmax = MAX(fdmax, c2.sock);
 	    printf("[%d] %s have TCP conn2[%u] for from %s\n", unsigned(p->port2), time_string(), unsigned(i+1), addr_to_str(from));
-	    c2.mav.init(c2.sock, CHAN_COMM2(i), true, true, p->port2);
+	    c2.mav.init(c2.sock, CHAN_COMM2(i), true, true, true, p->port2);
 	    conn2_count++;
 	    max_conn2_count = MAX(max_conn2_count, conn2_count);
 	    continue;
