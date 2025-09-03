@@ -39,11 +39,12 @@ void comm_send_buffer(mavlink_channel_t chan, const uint8_t *buf, uint8_t len)
 /*
   init connection
  */
-void MAVLink::init(int _fd, mavlink_channel_t _chan, bool signing_required, bool _allow_websocket, int _key_id)
+void MAVLink::init(int _fd, mavlink_channel_t _chan, bool signing_required, bool _allow_websocket, bool _is_tcp, int _key_id)
 {
     fd = _fd;
     chan = _chan;
     key_id = _key_id;
+    is_tcp = _is_tcp;
 
     got_signed_packet = false;
     key_loaded = false;
@@ -156,6 +157,16 @@ bool MAVLink::send_message(const mavlink_message_t &msg)
 {
     mavlink_message_t msg2 = msg;
     uint8_t buf[300];
+    if (is_tcp) {
+	if (socket_is_dead(fd)) {
+	    return false;
+	}
+	// if congested then drop this message, so we don't block
+	// other links
+	if (tcp_writable_bytes(fd) < 400) {
+	    return true;
+	}
+    }
     if (key_id == -1) {
         // strip signing
         msg2.incompat_flags &= ~MAVLINK_IFLAG_SIGNED;

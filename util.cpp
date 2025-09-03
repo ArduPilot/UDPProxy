@@ -11,6 +11,13 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/wait.h>
+#include <sys/ioctl.h>
+#include <stddef.h>
+#include <poll.h>
+
+#ifdef __linux__
+#include <linux/sockios.h>   // SIOCOUTQ
+#endif
 
 double time_seconds(void)
 {
@@ -118,4 +125,82 @@ const char *time_string(void)
     static char str[100] {};
     strftime(str, sizeof(str)-1, "%F %T", tm);
     return str;
+}
+
+/*
+  Returns the number of bytes that can be written to fd without blocking.
+  On error returns -1 and sets errno.
+*/
+ssize_t tcp_writable_bytes(int fd)
+{
+    int outq = 0;             // bytes currently queued in the send buffer
+#if defined(SIOCOUTQ)
+    if (ioctl(fd, SIOCOUTQ, &outq) == -1) {
+        return -1;
+    }
+#else
+# error "SIOCOUTQ not available on this platform"
+#endif
+
+    int sndbuf = 0;           // total size of the send buffer
+    socklen_t optlen = sizeof(sndbuf);
+    if (getsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, &optlen) == -1) {
+        return -1;
+    }
+
+    // Linux returns the kernel's accounting size for SO_SNDBUF (often doubled).
+    // The available space is the remainder; clamp at 0.
+    ssize_t avail = (ssize_t)sndbuf - (ssize_t)outq;
+    if (avail < 0) avail = 0;
+    return avail;
+}
+
+/*
+  return true if a TCP socket is dead
+*/
+bool socket_is_dead(int fd)
+{
+    // Verify it's a stream socket (TCP).
+    int type = 0;
+    socklen_t tlen = sizeof(type);
+    if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &tlen) == -1) {
+	return true;
+    }
+    if (type != SOCK_STREAM) {
+	return true;
+    }
+
+    // Quick, non-blocking health probe.
+    struct pollfd pfd {};
+    pfd.fd = fd;
+    pfd.events = POLLOUT | POLLERR | POLLHUP | POLLNVAL;
+    int pr = poll(&pfd, 1, 0);
+    if (pr < 0) {
+	return true;
+    }
+    if (pr == 1 && (pfd.revents & (POLLERR | POLLHUP | POLLNVAL))) {
+	return true;
+    }
+
+    // Check for a queued asynchronous error even if poll() looked fine.
+    // (This also catches connect() failures on nonblocking sockets.)
+    int soerr = 0; socklen_t slen = sizeof(soerr);
+    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &soerr, &slen) == 0 && soerr != 0) {
+	return true;
+    }
+
+#ifdef TCP_INFO
+    // Inspect TCP state. Consider only states that are writable as "alive".
+    struct tcp_info ti;
+    socklen_t tilen = sizeof(ti);
+    if (getsockopt(fd, IPPROTO_TCP, TCP_INFO, &ti, &tilen) == 0) {
+        // Writable in practice: ESTABLISHED, and often CLOSE_WAIT (peer sent FIN, but we can still write).
+        if (ti.tcpi_state != TCP_ESTABLISHED && ti.tcpi_state != TCP_CLOSE_WAIT) {
+	    return true;
+        }
+    }
+#endif
+
+    // looks healthy for writing
+    return false;
 }
