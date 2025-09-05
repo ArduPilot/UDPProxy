@@ -96,7 +96,7 @@ int open_socket_in_tcp(int port)
         return(-1); 
     }
 
-    if (listen(res, 8) != 0) {
+    if (listen(res, 100) != 0) {
 	return(-1);
     }
 
