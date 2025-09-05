@@ -121,9 +121,18 @@ bool MAVLink::receive_message(uint8_t *&buf, ssize_t &len, mavlink_message_t &ms
                                 }
                                 mav_printf(MAV_SEVERITY_CRITICAL, "Bad signing timestamp - replay");
                                 break;
-                            case MAVLINK_SIGNING_STATUS_OLD_TIMESTAMP:
-                                mav_printf(MAV_SEVERITY_CRITICAL, "Bad signing timestamp - old timestamp");
-                                break;
+			    case MAVLINK_SIGNING_STATUS_OLD_TIMESTAMP: {
+				const uint8_t *psig = msg.signature;
+				union tstamp {
+				    uint64_t t64;
+				    uint8_t t8[8];
+				} tstamp;
+				tstamp.t64 = 0;
+				memcpy(tstamp.t8, psig+1, 6);
+				double tserr = (double(tstamp.t64) - double(signing.timestamp))*1.0e-5;
+				mav_printf(MAV_SEVERITY_CRITICAL, "Bad signing timestamp - old timestamp (%.2fs)", tserr);
+				break;
+			    }
                             case MAVLINK_SIGNING_STATUS_NO_STREAMS:
                                 mav_printf(MAV_SEVERITY_CRITICAL, "Bad signing timestamp - no streams");
                                 break;
