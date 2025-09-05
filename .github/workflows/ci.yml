@@ -83,3 +83,39 @@ jobs:
 
         # Cleanup
         docker volume rm udpproxy-test-data
+
+  cmake-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
+
+    # Don't set up Python 3.12, use system default Python to match python3-tdb package
+    - name: Setup
+      run: |
+        set -e  # Exit on any error
+        echo "Running CI setup script..."
+        scripts/setup_ci.sh
+        echo "Setup completed successfully"
+
+    - name: Configure
+      run: |
+        cmake -B build
+
+    - name: Build
+      run: |
+        which python3
+        source venv/bin/activate
+        cmake --build build --parallel $(nproc)
+
+    - name: Test
+      run: |
+        ctest --test-dir build --output-junit test-results/junit.xml
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      with:
+        name: junit-results
+        path: build/test-results/junit.xml
